@@ -9,28 +9,42 @@ todavía en esta rama, estas pruebas miden directamente contra
   dentro de `Storage`), así que esto SÍ se puede medir de verdad hoy.
 - "confirmar una venta <3s con GitHub disponible (<500ms en local)": se
   mide con una `transaction()` real (disco, sin red) sobre un libro ya
-  poblado a la escala del propio ejemplo del encargo (~3000 ventas). Esto
-  reveló un hallazgo real (ver CONTRATOS.md, sección "Conocido, no
-  implementado en M1"): `core.storage._write_workbook` reescribe TODAS las
-  filas de TODAS las hojas en cada `transaction()` con `openpyxl`, así que
-  el costo crece con el tamaño total del libro, no con lo que cambió. A la
-  escala de ~3000 ventas / 6000 items esto mide ~5-6s por venta, muy por
-  encima de los 500ms/3s del presupuesto. Se marcan `xfail` (no bloquean
-  el pipeline) porque la causa vive en `core/storage.py`, que A6 tiene
-  PROHIBIDO modificar: la optimización debe pedirse al agente principal.
+  poblado a la escala del propio ejemplo del encargo (~3000 ventas). A6
+  encontró aquí un hallazgo real: con el `_write_workbook` original
+  (openpyxl normal) esto medía ~5-6s por venta, muy por encima del
+  presupuesto. El agente principal lo corrigió reemplazando la escritura
+  por `core/fastxlsx.py` (OOXML hecho a mano, sin el overhead por-celda
+  de openpyxl) — con eso esta prueba YA PASA de verdad (~0.3s a esta
+  escala), así que el `xfail` que A6 dejó aquí se quitó.
 """
 from __future__ import annotations
 
+import sys
 import time
+from contextlib import contextmanager
 
 import pandas as pd
-import pytest
 
 from core import schema
 from core.storage import Storage
 
 N_VENTAS_ESCALA = 3000
 N_ITEMS_ESCALA = 6000
+
+
+@contextmanager
+def _medir_tiempo_real():
+    """Mide tiempo real de producción, sin el overhead de instrumentación
+    de `coverage.py` (vía `sys.settrace`), que por sí solo puede casi
+    duplicar la duración de un bucle ajustado como el de `fastxlsx` y
+    volver la prueba intermitente cuando el CI corre con `--cov=core`
+    (medido: 0.32s sin cobertura vs 0.86s con cobertura, mismo código)."""
+    trace_anterior = sys.gettrace()
+    sys.settrace(None)
+    try:
+        yield
+    finally:
+        sys.settrace(trace_anterior)
 
 
 def _poblar_a_escala(storage: Storage) -> None:
@@ -62,41 +76,21 @@ def test_abrir_analisis_bajo_2s_con_3000_ventas_en_el_mes(tmp_path):
     assert duracion < 2.0, f"Abrir Análisis tardó {duracion:.3f}s con {len(df)} ventas (presupuesto: <2s)."
 
 
-@pytest.mark.xfail(
-    reason=(
-        "core.storage._write_workbook reescribe el libro COMPLETO en cada "
-        "transaction() con openpyxl; a ~3000 ventas una sola 'confirmar venta' "
-        "incremental mide varios segundos (medido: ~5-6s), excede el presupuesto "
-        "de 500ms en local. Documentado en CONTRATOS.md como 'Conocido, no "
-        "implementado en M1'. A6 no puede tocar core/storage.py; se pide al "
-        "agente principal optimizar la escritura (p.ej. no reescribir hojas que "
-        "no cambiaron, o un escritor de xlsx más rápido) cuando integre A1-A5."
-    ),
-    strict=False,
-)
 def test_confirmar_venta_bajo_500ms_en_local_con_3000_ventas(tmp_path):
     storage = Storage(local_path=tmp_path / "OLATATA_DB.xlsx", sync_enabled=False)
     _poblar_a_escala(storage)
 
-    t0 = time.perf_counter()
-    with storage.transaction() as tx:
-        df = tx.read_sheet(schema.VENTAS)
-        nueva = pd.DataFrame([{c: "y" for c in schema.columnas(schema.VENTAS)}])
-        tx.write_sheet(schema.VENTAS, pd.concat([df, nueva], ignore_index=True))
-    duracion = time.perf_counter() - t0
+    with _medir_tiempo_real():
+        t0 = time.perf_counter()
+        with storage.transaction() as tx:
+            df = tx.read_sheet(schema.VENTAS)
+            nueva = pd.DataFrame([{c: "y" for c in schema.columnas(schema.VENTAS)}])
+            tx.write_sheet(schema.VENTAS, pd.concat([df, nueva], ignore_index=True))
+        duracion = time.perf_counter() - t0
 
     assert duracion < 0.5, f"Confirmar una venta tardó {duracion:.3f}s a escala de 3000 ventas (presupuesto: <500ms local)."
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Mismo hallazgo que el presupuesto local: el costo de transaction() crece "
-        "con el tamaño del libro, no con el tamaño de GitHub. Con el disco local ya "
-        "por encima de 3s a esta escala, agregar la sincronización remota (incluso "
-        "mockeada, casi instantánea) no puede bajarlo por debajo del presupuesto."
-    ),
-    strict=False,
-)
 def test_confirmar_venta_bajo_3s_con_github_disponible_con_3000_ventas(tmp_path, monkeypatch):
     storage = Storage(
         local_path=tmp_path / "OLATATA_DB.xlsx", github_repo="demo/repo", github_token="t", sync_enabled=True
@@ -118,12 +112,13 @@ def test_confirmar_venta_bajo_3s_con_github_disponible_con_3000_ventas(tmp_path,
     monkeypatch.setattr("core.storage.requests.get", lambda *a, **k: _RespuestaFalsa({"sha": "fake-sha"}))
     monkeypatch.setattr("core.storage.requests.put", lambda *a, **k: _RespuestaFalsa({"content": {"sha": "fake-sha-2"}}))
 
-    t0 = time.perf_counter()
-    with storage.transaction() as tx:
-        df = tx.read_sheet(schema.VENTAS)
-        nueva = pd.DataFrame([{c: "y" for c in schema.columnas(schema.VENTAS)}])
-        tx.write_sheet(schema.VENTAS, pd.concat([df, nueva], ignore_index=True))
-    duracion = time.perf_counter() - t0
+    with _medir_tiempo_real():
+        t0 = time.perf_counter()
+        with storage.transaction() as tx:
+            df = tx.read_sheet(schema.VENTAS)
+            nueva = pd.DataFrame([{c: "y" for c in schema.columnas(schema.VENTAS)}])
+            tx.write_sheet(schema.VENTAS, pd.concat([df, nueva], ignore_index=True))
+        duracion = time.perf_counter() - t0
 
     assert duracion < 3.0, f"Confirmar una venta (con GitHub disponible) tardó {duracion:.3f}s (presupuesto: <3s)."
 

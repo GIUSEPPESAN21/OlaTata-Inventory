@@ -82,14 +82,22 @@ Reglas duras:
   **nunca sobrescribe**, marca `sync_status().en_conflicto = True`. Ante
   409/422 transitorio reintenta hasta 2 veces. Si no hay red: la venta
   YA quedó a salvo en disco local; solo sube `sync_status().pendientes`.
-- Toda celda de texto se fuerza a `data_type="s"` al escribir el .xlsx:
-  un valor como `"=1+1"` nunca se guarda como fórmula (R11).
-- **Conocido, no implementado en M1:** no se usa un `fastxlsx.py` que
-  escriba OOXML a mano (como el del lab) — se usa `openpyxl` directo.
-  Es correcto pero más lento en libros grandes. Si los presupuestos de
-  rendimiento del §11 (confirmar venta < 500ms local) no se cumplen con
-  datos reales de varios meses, ese es el primer lugar a optimizar. A6
-  debe medirlo en el smoke E2E y reportarlo si es un problema real.
+- Toda celda de texto se fuerza a tipo texto (`inlineStr`) al escribir el
+  .xlsx: un valor como `"=1+1"` nunca se guarda como fórmula (R11).
+- **Escritura real: `core/fastxlsx.py`** (ya implementado, no openpyxl
+  directo). A6 midió que escribir con `openpyxl` normal (incluso en modo
+  `write_only`) tardaba ~2-5s por `transaction()` incremental a escala de
+  un mes de alto volumen (1500-3000 ventas) — muy por encima del
+  presupuesto de 500ms del §11. La causa es el overhead por-celda de la
+  API de openpyxl (confirmado con `cProfile`: ~141k celdas ≈ 4s solo en
+  la serialización XML celda por celda). `core/fastxlsx.py` construye el
+  OOXML a mano con `str.join` (texto siempre `t="inlineStr"`, nunca
+  fórmula) y baja esto a ~0.3s a la misma escala — dentro del
+  presupuesto. `core/storage.py._write_workbook` delega en
+  `fastxlsx.write_workbook`; la LECTURA sigue usando
+  `pandas.read_excel(engine="openpyxl")` normal (no era el cuello de
+  botella). Ver `tests/test_fastxlsx.py` y `tests/test_perf_budgets.py`
+  para el benchmark y las pruebas de round-trip de tipos.
 
 ## `core/permissions.py` (§10: revalidado en core/, no solo en la UI)
 

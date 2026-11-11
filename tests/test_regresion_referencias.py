@@ -198,9 +198,17 @@ def test_stock_en_cero_o_negativo_genera_alerta():
 def test_ningun_archivo_del_repo_usa_selectores_st_emotion_cache():
     """Esas clases las regenera Streamlit en cada versión; depender de ellas
     fue el defecto §2.e. Revisa todo el código propio (no node_modules /
-    .venv / .git) buscando el patrón exacto."""
+    .venv / .git / worktrees de agentes) buscando un SELECTOR REAL
+    (`.st-emotion-cache-<hash>`, con un sufijo alfanumérico real) — no
+    basta con que el texto MENCIONE el patrón como documentación (p.ej.
+    `.st-emotion-cache-*` con un comodín, en un docstring que explica qué
+    NO hacer); por eso el patrón exige al menos un carácter alfanumérico
+    tras el último guion, cosa que un comodín "*" nunca cumple."""
+    import re
+
+    patron_selector_real = re.compile(r"\.st-emotion-cache-[0-9a-zA-Z]+")
     raiz = CORE_DIR.parent
-    carpetas_excluidas = {".git", ".venv", "node_modules", "__pycache__", ".streamlit"}
+    carpetas_excluidas = {".git", ".venv", "node_modules", "__pycache__", ".streamlit", ".claude"}
     violaciones = []
     for archivo in raiz.rglob("*"):
         if not archivo.is_file():
@@ -215,7 +223,7 @@ def test_ningun_archivo_del_repo_usa_selectores_st_emotion_cache():
             texto = archivo.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        if "st-emotion-cache" in texto:
+        if patron_selector_real.search(texto):
             violaciones.append(str(archivo.relative_to(raiz)))
     assert not violaciones, f"Se encontraron selectores CSS frágiles (§2.e): {violaciones}"
 

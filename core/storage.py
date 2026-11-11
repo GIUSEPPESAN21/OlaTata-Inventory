@@ -34,11 +34,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
-import openpyxl
 import pandas as pd
 import requests
 
-from core import schema
+from core import fastxlsx, schema
 from core.timeutil import now_utc, to_iso_utc
 
 GITHUB_API = "https://api.github.com"
@@ -199,22 +198,15 @@ class Storage:
 
     @staticmethod
     def _write_workbook(path: Path, sheets: dict[str, pd.DataFrame]) -> None:
-        wb = openpyxl.Workbook()
-        wb.remove(wb.active)
-        for name in schema.SHEET_NAMES:
-            df = sheets[name]
-            ws = wb.create_sheet(title=name[:31])
-            ws.append(list(df.columns))
-            for _, fila in df.iterrows():
-                valores = [None if pd.isna(v) else v for v in fila]
-                ws.append(valores)
-            # R11: ninguna celda de texto se guarda jamás como fórmula,
-            # sin importar con qué carácter empiece (p.ej. "=1+1").
-            for fila_celdas in ws.iter_rows(min_row=2):
-                for celda in fila_celdas:
-                    if isinstance(celda.value, str):
-                        celda.data_type = "s"
-        wb.save(path)
+        """Delega en `core.fastxlsx` (OOXML hecho a mano, sin el overhead
+        por-celda de openpyxl). Hallazgo de A6: con openpyxl normal, una
+        transacción incremental con un mes de alto volumen (1500 ventas /
+        3750 items) tardaba ~2-3.5s, muy por encima del presupuesto de
+        500ms (§11); con `fastxlsx` baja a milisegundos (ver benchmark en
+        docs/CONTRATOS.md). R11 se garantiza en `fastxlsx` mismo: todo
+        texto se escribe como `t="inlineStr"`, que nunca es fórmula.
+        """
+        fastxlsx.write_workbook(path, sheets, schema.SHEET_NAMES)
 
     # -------------------------------------------------------- sync GitHub
     def _publish_to_github(self) -> None:
