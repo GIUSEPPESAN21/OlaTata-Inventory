@@ -21,6 +21,7 @@ CAPABILITIES: dict[str, frozenset[str]] = {
             "anular_venta",
             "devolucion_cambio",
             "ver_costos",
+            "ver_analisis_basico",
             "ver_analisis_completo",
             "gestionar_inventario",
             "ajustar_stock",

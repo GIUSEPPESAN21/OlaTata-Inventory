@@ -103,7 +103,7 @@ requerir(rol: str, capacidad: str) -> None   # lanza PermisoDenegadoError
 
 Capacidades iniciales (ampliables bajo pedido):
 - **admin**: `vender, ver_ventas_todas, anular_venta, devolucion_cambio,
-  ver_costos, ver_analisis_completo, gestionar_inventario, ajustar_stock,
+  ver_costos, ver_analisis_basico, ver_analisis_completo, gestionar_inventario, ajustar_stock,
   importar_inventario, etiquetas, verificar_integridad, cuadre_caja,
   cerrar_mes, gestionar_usuarios, resolver_conflicto_sync,
   descargar_respaldo, configurar_negocio`.
