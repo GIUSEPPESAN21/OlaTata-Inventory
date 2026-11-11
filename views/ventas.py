@@ -5,7 +5,7 @@ anulación (SOLO admin, con motivo obligatorio) -- §6.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 import streamlit as st
 
@@ -13,6 +13,7 @@ from core import schema
 from core.money import format_cop
 from core.permissions import PermisoDenegadoError, tiene_capacidad
 from core.returns import DevolucionInvalidaError, VentaNoEncontradaError, anular_venta, registrar_devolucion_cambio
+from core.timeutil import local_date, now_utc
 from views import ViewContext
 
 _METODOS_LABEL = {
@@ -31,7 +32,9 @@ def render(ctx: ViewContext) -> None:
     st.subheader("Ventas")
 
     col1, col2 = st.columns(2)
-    hoy = date.today()
+    # R2: "hoy" SIEMPRE en America/Bogota, nunca date.today() (hora del
+    # servidor, típicamente UTC en despliegues cloud — el defecto §2.a).
+    hoy = local_date(now_utc())
     desde = col1.date_input("Desde", value=hoy - timedelta(days=7), key="ventas_desde")
     hasta = col2.date_input("Hasta", value=hoy, key="ventas_hasta")
 
