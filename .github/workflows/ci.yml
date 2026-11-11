@@ -1,0 +1,61 @@
+name: CI
+
+# Propiedad de A6 (QA y Datos). Ver docs/CONTRATOS.md y CLAUDE.md:
+# - core/ debe mantenerse en >=85% de cobertura (bloqueante).
+# - views/ y app.py (UI) se reportan aparte, de forma informativa, SIN
+#   bloquear el build por su cobertura (todavía son/pueden ser stubs de
+#   A1-A5 en construcción).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Pruebas (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - name: Clonar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Instalar dependencias (requirements-dev.txt)
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Verificar que todo compile (py_compile)
+        run: |
+          set -e
+          archivos=$(find core scripts tests views -name "*.py" 2>/dev/null)
+          if [ -f app.py ]; then
+            archivos="$archivos app.py"
+          fi
+          python -m py_compile $archivos
+
+      - name: Pruebas + cobertura de core/ (BLOQUEANTE, >=85%)
+        run: >
+          pytest tests/
+          --cov=core
+          --cov-report=term-missing
+          --cov-fail-under=85
+
+      - name: Cobertura de views/ y app.py (informativa, NO bloqueante)
+        if: always()
+        run: |
+          pytest tests/ --cov=core --cov=views --cov-append --cov-report= -q || true
+          coverage report --include="views/*,app.py" || echo "Sin vistas/app.py con cobertura medible todavía."
+
+      - name: Smoke E2E (90 días simulados, datos ficticios, semilla fija)
+        run: python scripts/smoke_e2e.py
