@@ -1,0 +1,33 @@
+# Secretos y configuración local
+.streamlit/secrets.toml
+.env
+
+# Datos (nunca en el repo de código)
+*.xlsx
+_referencia/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+
+# Pruebas / cobertura
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
