@@ -84,17 +84,32 @@ def _nuevo_id(tx, contador: str, prefijo: str, ancho: int = 6) -> str:
     return f"{prefijo}-{tx.next_counter(contador):0{ancho}d}"
 
 
-def _hora_aleatoria_bogota(rng: random.Random, fecha_local: date) -> datetime:
-    """Hora de venta aleatoria dentro del horario de tienda, con una cola
-    deliberada hasta las 23:45 Bogotá para ejercitar el defecto §2a (corte
-    de día en UTC) si alguna vez se reintrodujera."""
-    minuto_del_dia = rng.choice(
-        list(range(9 * 60, 21 * 60))  # 9:00am a 9:00pm, la mayoría de ventas
-        + list(range(21 * 60, 23 * 60 + 45))  # cola hasta las 11:45pm (minoría)
-    )
-    hora, minuto = divmod(minuto_del_dia, 60)
-    dt_local = datetime(fecha_local.year, fecha_local.month, fecha_local.day, hora, minuto, 0, tzinfo=BOGOTA)
-    return dt_local.astimezone(UTC)
+class _RelojDelDia:
+    """Genera horas DENTRO del día, aleatorias en su espaciado pero
+    SIEMPRE crecientes entre llamadas sucesivas (con una cola deliberada
+    hasta las 23:45 Bogotá para ejercitar el defecto §2a si se
+    reintrodujera). Es clave que crezcan: el orden en que este script
+    procesa ventas/devoluciones ya respeta la cadena stock_antes/
+    stock_despues por producto, y esa cadena solo es coherente con
+    `fecha_hora_utc` si las horas asignadas avanzan en el mismo orden en
+    que se procesan — igual que en producción real, donde el reloj del
+    servidor nunca retrocede entre una venta y la siguiente. Horas
+    independientes y no ordenadas (lo que hacía la versión anterior de
+    este generador) rompían esa cadena y producían un libro vivo
+    inconsistente tras el cierre de mes."""
+
+    def __init__(self, rng: random.Random, fecha_local: date) -> None:
+        self._rng = rng
+        self._fecha_local = fecha_local
+        self._minuto = 9 * 60  # arranca a las 9:00am Bogotá
+
+    def siguiente(self) -> datetime:
+        self._minuto = min(self._minuto + self._rng.randint(1, 6), 23 * 60 + 45)
+        hora, minuto = divmod(self._minuto, 60)
+        dt_local = datetime(
+            self._fecha_local.year, self._fecha_local.month, self._fecha_local.day, hora, minuto, 0, tzinfo=BOGOTA
+        )
+        return dt_local.astimezone(UTC)
 
 
 def crear_usuarios_demo(storage) -> dict[str, str]:
@@ -115,13 +130,25 @@ def crear_usuarios_demo(storage) -> dict[str, str]:
     return ids
 
 
-def crear_catalogo_y_proveedores(storage, rng: random.Random) -> list[dict]:
+def crear_catalogo_y_proveedores(storage, rng: random.Random, fecha_referencia: date | None = None) -> list[dict]:
     """Crea proveedores, productos y su stock inicial (con el movimiento
     `stock_inicial` correspondiente). Devuelve una lista de dicts mutables
     `{"id", "nombre", "costo", "precio", "stock"}` que el resto del seed usa
     como caché de trabajo (y que se mantiene sincronizada con la hoja STOCK
-    real dentro de cada transacción posterior)."""
-    ahora = to_iso_utc(now_utc())
+    real dentro de cada transacción posterior).
+
+    `fecha_referencia`: si se da, el movimiento `stock_inicial` se fecha a
+    las 00:00 Bogotá de ese día en vez de "ahora" (reloj real). Importante
+    para simulaciones históricas (smoke E2E): si se deja en `now_utc()` y
+    la simulación finge ocurrir en el pasado (p.ej. 2025), ese movimiento
+    queda fuera del rango de TODOS los cierres de mes simulados y nunca se
+    archiva — rompiendo el invariante "stock = Σ movimientos" del libro
+    vivo para siempre. Con `fecha_referencia` queda dentro del primer mes
+    simulado y se archiva normalmente en su cierre."""
+    if fecha_referencia is not None:
+        ahora = to_iso_utc(datetime(fecha_referencia.year, fecha_referencia.month, fecha_referencia.day, tzinfo=BOGOTA))
+    else:
+        ahora = to_iso_utc(now_utc())
     productos: list[dict] = []
     with storage.transaction() as tx:
         df_prov = tx.read_sheet(schema.PROVEEDORES)
@@ -261,12 +288,13 @@ def generar_ventas_dia(
 
         nuevas_ventas, nuevos_items, nuevos_pagos, nuevos_mov = [], [], [], []
         nuevas_dev, nuevos_dev_items = [], []
+        reloj = _RelojDelDia(rng, fecha_local)
 
         for _ in range(ventas_por_dia):
             disponibles = [p for p in productos if p["stock"] > 0]
             if not disponibles:
                 break
-            dt_utc = _hora_aleatoria_bogota(rng, fecha_local)
+            dt_utc = reloj.siguiente()
             ahora = to_iso_utc(dt_utc)
             n_lineas = rng.choice([1, 1, 1, 2, 2, 3])
             elegidos = rng.sample(disponibles, k=min(n_lineas, len(disponibles)))
@@ -424,7 +452,7 @@ def generar_ventas_dia(
                 break
             idx = rng.randrange(len(historial_vendido))
             entrada = historial_vendido.pop(idx)
-            dt_utc = _hora_aleatoria_bogota(rng, fecha_local)
+            dt_utc = reloj.siguiente()
             ahora = to_iso_utc(dt_utc)
             dev_id = _nuevo_id(tx, "devoluciones", "D", 7)
             dev_numero = tx.next_counter("devoluciones_numero", reset_key=mes_key)
@@ -522,7 +550,7 @@ def poblar_demo(storage, dias: int = 90, ventas_por_dia: int = 40, seed: int = S
         fecha_inicio = date(2025, 9, 1)
 
     usuarios = crear_usuarios_demo(storage)
-    productos = crear_catalogo_y_proveedores(storage, rng)
+    productos = crear_catalogo_y_proveedores(storage, rng, fecha_referencia=fecha_inicio)
 
     historial_vendido: list[dict] = []
     resumenes_por_dia = []

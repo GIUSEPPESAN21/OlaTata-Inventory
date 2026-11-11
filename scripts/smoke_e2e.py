@@ -95,16 +95,34 @@ def cerrar_mes_manual(storage, anio: int, mes: int) -> dict:
 def _cerrar_mes(storage, anio: int, mes: int) -> tuple[dict, bool]:
     """Intenta usar `core.monthly_close` real si ya existe (integrado por
     el agente principal); si no, usa el fallback manual de A6. Devuelve
-    (resultado, fue_integracion_real)."""
+    SIEMPRE un dict con la misma forma que `cerrar_mes_manual` (normaliza
+    el `ResultadoCierre` real a dict), más (resultado, fue_integracion_real)
+    para que el resto del script no le importe cuál camino se tomó."""
+    mes_key = f"{anio:04d}-{mes:02d}"
     try:
         from core import monthly_close  # type: ignore
     except (ImportError, ModuleNotFoundError):
         return cerrar_mes_manual(storage, anio, mes), False
+
+    stock_antes = storage.read_sheet(schema.STOCK).copy()
     try:
-        resultado = monthly_close.cerrar_mes(storage, anio, mes)  # firma supuesta
-        return resultado, True
+        # Firma real de A4 (core/monthly_close.py): cerrar_mes(storage, rol,
+        # year, month) — requiere "admin" (requerir(rol, "cerrar_mes")).
+        # Devuelve un `ResultadoCierre` (dataclass), no un dict.
+        resultado = monthly_close.cerrar_mes(storage, "admin", anio, mes)
     except (AttributeError, TypeError):
         return cerrar_mes_manual(storage, anio, mes), False
+
+    stock_despues = storage.read_sheet(schema.STOCK)
+    stock_intacto = stock_antes["cantidad"].sum() == stock_despues["cantidad"].sum() and len(
+        stock_antes
+    ) == len(stock_despues)
+    dict_resultado = {
+        "mes": mes_key,
+        "filas_archivadas": dict(getattr(resultado, "filas_por_hoja", {}) or {}),
+        "stock_no_se_reinicio": bool(stock_intacto),
+    }
+    return dict_resultado, True
 
 
 # ------------------------------------------------------- verificación de §11
@@ -139,31 +157,41 @@ def verificar_invariantes_del_mes(storage) -> list[str]:
 
 
 def verificar_stock_igual_suma_historica_de_movimientos(storage, meses_cerrados: list[dict]) -> list[str]:
-    """Invariante 'stock = Σ movimientos' considerando el HISTÓRICO
-    completo (archivo de cada cierre + libro vivo actual) — porque
-    `movimientos` SÍ se vacía en cada cierre de mes (R7), a diferencia de
-    `stock`, que nunca se reinicia. Si esto no se verificara contra el
-    archivo, el invariante parecería (falsamente) roto después de cerrar."""
-    piezas = [storage.read_sheet(schema.MOVIMIENTOS)]
-    for cierre in meses_cerrados:
-        contenido = storage.archive_get_bytes(f"cierres/{cierre['mes']}.xlsx")
-        if contenido is None:
-            continue
-        df = pd.read_excel(io.BytesIO(contenido), sheet_name=schema.MOVIMIENTOS[:31], engine="openpyxl")
-        piezas.append(df)
-    historico = pd.concat(piezas, ignore_index=True) if piezas else pd.DataFrame(columns=schema.columnas(schema.MOVIMIENTOS))
-    if historico.empty:
-        return ["no hay movimientos históricos que verificar (inesperado)"]
-    historico["cantidad"] = historico["cantidad"].astype(int)
-    suma_por_producto = historico.groupby("producto_id")["cantidad"].sum()
+    """Invariante 'stock = Σ movimientos', verificado contra el LIBRO
+    VIVO únicamente (es exactamente lo que hace "Verificar integridad" de
+    A1 en producción).
+
+    Nota de diseño (corregida por el coordinador tras encontrar que este
+    chequeo original sumaba también los movimientos ARCHIVADOS de cada
+    mes cerrado, además de los vivos): eso SOBRE-cuenta a propósito,
+    porque el movimiento "apertura" que escribe `core.monthly_close` al
+    cerrar un mes (§8, paso 4) YA guarda el valor ABSOLUTO de
+    `stock_cierre` en su `cantidad` — no es un delta de cero. Esa fila
+    existe precisamente para que "stock = Σ movimientos" siga siendo
+    cierto usando SOLO lo que queda en el libro vivo después de archivar
+    (los movimientos previos a `stock_cierre` ya no hacen falta: su
+    efecto neto quedó capturado en una sola fila). Sumar la apertura
+    ENCIMA del historial archivado que ya construía ese mismo valor
+    duplica la cuenta. `meses_cerrados` se conserva como parámetro para
+    no romper la firma que usa `scripts/smoke_e2e.py`, pero ya no se usa
+    aquí — la verificación histórica corresponde, si se necesita, a
+    comparar cada archivo contra su propio `resumen_mes`/`stock_cierre`
+    (lo que `core.monthly_close._paso3_verificar` ya hace antes de
+    aplicar cada cierre)."""
+    del meses_cerrados  # ver nota de diseño arriba
+    df_mov = storage.read_sheet(schema.MOVIMIENTOS)
+    df_stock = storage.read_sheet(schema.STOCK)
+    if df_mov.empty:
+        suma_por_producto = pd.Series(dtype="int64")
+    else:
+        suma_por_producto = df_mov["cantidad"].astype(int).groupby(df_mov["producto_id"]).sum()
 
     problemas = []
-    df_stock = storage.read_sheet(schema.STOCK)
     for _, fila in df_stock.iterrows():
         esperado = int(suma_por_producto.get(fila["producto_id"], 0))
         real = int(fila["cantidad"])
         if esperado != real:
-            problemas.append(f"producto {fila['producto_id']}: Σmovimientos={esperado} pero stock={real}")
+            problemas.append(f"producto {fila['producto_id']}: Σmovimientos(vivos)={esperado} pero stock={real}")
     return problemas
 
 
@@ -280,7 +308,7 @@ def main() -> int:
     storage = FakeStorage()
     rng = random.Random(SEED_POR_DEFECTO)
     usuarios = crear_usuarios_demo(storage)
-    productos = crear_catalogo_y_proveedores(storage, rng)
+    productos = crear_catalogo_y_proveedores(storage, rng, fecha_referencia=FECHA_INICIO)
 
     historial_vendido: list[dict] = []
     resumenes: list[dict] = []

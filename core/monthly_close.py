@@ -279,6 +279,11 @@ def _paso1_construir_snapshot(storage, year: int, month: int) -> dict[str, pd.Da
     inicio, fin = month_bounds_utc(year, month)
 
     def _por_fecha_hora_utc(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            # `.map()` sobre una columna vacía da dtype=object (no bool);
+            # `df[mascara_vacia]` colapsaría a (0,0) y perdería las
+            # columnas. Una hoja vacía no tiene nada que filtrar.
+            return df
         fechas = df["fecha_hora_utc"].map(_parse_o_none)
         en_rango = fechas.map(lambda f: f is not None and inicio <= f < fin)
         return df[en_rango].reset_index(drop=True)
@@ -318,7 +323,10 @@ def _paso1_construir_snapshot(storage, year: int, month: int) -> dict[str, pd.Da
         return inicio_local <= d < fin_local
 
     cuadre_df = storage.read_sheet(schema.CUADRE_CAJA)
-    cuadre_caja = cuadre_df[cuadre_df["fecha_local"].map(_fecha_local_en_rango)].reset_index(drop=True)
+    if cuadre_df.empty:
+        cuadre_caja = cuadre_df
+    else:
+        cuadre_caja = cuadre_df[cuadre_df["fecha_local"].map(_fecha_local_en_rango)].reset_index(drop=True)
 
     stock_cierre = _calcular_stock_cierre(storage, fin)
     resumen_mes = _calcular_resumen_mes(ventas, venta_items, devoluciones, year, month)
@@ -445,6 +453,15 @@ def _paso4_aplicar(
 
         for hoja in schema.HOJAS_TRANSACCIONALES_MENSUALES:
             df = tx.read_sheet(hoja)
+            if df.empty:
+                # Caso de borde real (pandas): un `.map()` sobre una columna
+                # vacía produce una máscara dtype=object (no bool), y
+                # `df[mascara_vacia]` colapsa a forma (0,0) — pierde TODAS
+                # las columnas. Como una hoja vacía no tiene nada que
+                # filtrar, se reescribe tal cual (ya tiene las columnas
+                # correctas) y se evita el problema de raíz.
+                tx.write_sheet(hoja, df)
+                continue
             if hoja == schema.CUADRE_CAJA:
 
                 def _fuera_de_rango_local(valor: object) -> bool:
