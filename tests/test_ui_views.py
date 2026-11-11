@@ -32,16 +32,12 @@ def test_vendedor_ve_vender_y_ventas():
     assert "ventas" in claves
 
 
-def test_admin_ve_todas_las_vistas_cuyo_permiso_tiene():
-    """OJO (hallazgo, no se corrige aquí): `core.permissions.CAPABILITIES`
-    le da a `admin` la capacidad `ver_analisis_completo` pero NO
-    `ver_analisis_basico`, que es la que exige `views.VIEWS` para la
-    pantalla "Análisis" — así que con el contrato actual el admin NO ve
-    esa pantalla en el menú. Reportado en el informe final como un
-    contrato a revisar; esta prueba documenta el comportamiento real."""
+def test_admin_ve_todas_las_vistas():
+    # Corregido por el coordinador: `core.permissions.CAPABILITIES[ADMIN]`
+    # ahora incluye "ver_analisis_basico" además de "ver_analisis_completo",
+    # así que el admin ve las 5 pantallas del menú (§6).
     claves = [v["key"] for v in vistas_visibles_para_rol(ADMIN)]
-    assert claves == ["vender", "ventas", "inventario", "ajustes"]
-    assert "analisis" not in claves
+    assert claves == ["vender", "ventas", "inventario", "analisis", "ajustes"]
 
 
 def test_rol_desconocido_no_ve_nada():
