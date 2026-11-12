@@ -19,6 +19,7 @@ from core.money import format_cop, parse_pesos
 from core.permissions import PermisoDenegadoError
 from core.receipts import generar_texto_recibo, generar_url_whatsapp
 from core.sales import PagoInvalidoError, StockInsuficienteError, VentaInvalidaError, confirmar_venta
+from core.ui import card, chip_estado, encabezado_pagina, estado_vacio, render_logo, titulo_seccion
 from views import ViewContext
 
 _METODOS_LABEL = {
@@ -87,17 +88,24 @@ def render(ctx: ViewContext) -> None:
         _mostrar_recibo(ctx)
         return
 
-    st.subheader("Vender")
+    encabezado_pagina("Vender", "Busca o escanea un producto para empezar", icono="shopping_bag")
 
     productos_df = storage.read_sheet(schema.PRODUCTOS)
     if productos_df.empty:
-        st.info("Todavía no hay productos en el inventario. Agrega productos en la pantalla Inventario.")
+        estado_vacio(
+            "Todavía no hay productos en el inventario.",
+            "Agrega productos en la pantalla Inventario.",
+            icono="inventory_2",
+        )
         return
     productos_activos = productos_df[productos_df["activo"] == True]  # noqa: E712
 
-    with st.form("vender_buscar", clear_on_submit=True):
-        texto_busqueda = st.text_input("Buscar por nombre, código o escanear")
-        buscar = st.form_submit_button("Agregar al carrito", use_container_width=True)
+    with card(acento="superior"):
+        with st.form("vender_buscar", clear_on_submit=True):
+            texto_busqueda = st.text_input("Buscar por nombre, código o escanear", icon=":material/search:")
+            buscar = st.form_submit_button(
+                "Agregar al carrito", use_container_width=True, type="primary", icon=":material/add_shopping_cart:"
+            )
     if buscar:
         fila = _buscar_producto(productos_activos, texto_busqueda)
         if fila is None:
@@ -107,45 +115,49 @@ def render(ctx: ViewContext) -> None:
             ctx.rerun()
 
     if not st.session_state.vender_carrito:
-        st.info("El carrito está vacío. Busca o escanea un producto para empezar.")
+        estado_vacio("El carrito está vacío.", "Busca o escanea un producto para empezar.", icono="shopping_cart")
         return
 
-    st.markdown("### Carrito")
-    idx_a_eliminar = None
-    for idx, linea in enumerate(st.session_state.vender_carrito):
-        col1, col2, col3, col4 = st.columns([4, 2, 2, 1])
-        col1.write(linea["nombre_snapshot"])
-        nueva_cantidad = col2.number_input(
-            "Cant.", min_value=1, value=int(linea["cantidad"]), key=f"vender_cant_{idx}", step=1
-        )
-        linea["cantidad"] = int(nueva_cantidad)
-        col3.write(format_cop(linea["precio_unitario"] * linea["cantidad"]))
-        if col4.button("Quitar", key=f"vender_del_{idx}"):
-            idx_a_eliminar = idx
-    if idx_a_eliminar is not None:
-        st.session_state.vender_carrito.pop(idx_a_eliminar)
-        ctx.rerun()
+    with card(acento="izquierdo"):
+        titulo_seccion("Carrito", centrado=False)
+        idx_a_eliminar = None
+        for idx, linea in enumerate(st.session_state.vender_carrito):
+            col1, col2, col3, col4 = st.columns([4, 2, 2, 1])
+            col1.write(linea["nombre_snapshot"])
+            nueva_cantidad = col2.number_input(
+                "Cant.", min_value=1, value=int(linea["cantidad"]), key=f"vender_cant_{idx}", step=1
+            )
+            linea["cantidad"] = int(nueva_cantidad)
+            col3.markdown(
+                f'<span class="ot-precio-producto">{format_cop(linea["precio_unitario"] * linea["cantidad"])}</span>',
+                unsafe_allow_html=True,
+            )
+            if col4.button("Quitar", key=f"vender_del_{idx}", icon=":material/delete:", help="Quitar del carrito"):
+                idx_a_eliminar = idx
+        if idx_a_eliminar is not None:
+            st.session_state.vender_carrito.pop(idx_a_eliminar)
+            ctx.rerun()
 
-    subtotal = sum(l["precio_unitario"] * l["cantidad"] for l in st.session_state.vender_carrito)
-    st.write(f"**Subtotal: {format_cop(subtotal)}**")
+        subtotal = sum(l["precio_unitario"] * l["cantidad"] for l in st.session_state.vender_carrito)
+        st.caption(f"Subtotal: {format_cop(subtotal)}")
 
-    col_desc1, col_desc2 = st.columns(2)
-    tipo_descuento = col_desc1.selectbox("Descuento", ["Sin descuento", "Porcentaje (%)", "Monto ($)"])
-    valor_descuento = 0
-    if tipo_descuento != "Sin descuento":
-        valor_descuento = col_desc2.number_input("Valor del descuento", min_value=0, value=0)
+        col_desc1, col_desc2 = st.columns(2)
+        tipo_descuento = col_desc1.selectbox("Descuento", ["Sin descuento", "Porcentaje (%)", "Monto ($)"])
+        valor_descuento = 0
+        if tipo_descuento != "Sin descuento":
+            valor_descuento = col_desc2.number_input("Valor del descuento", min_value=0, value=0)
 
-    canal = st.selectbox("Canal", list(_CANALES_LABEL.keys()), format_func=lambda k: _CANALES_LABEL[k])
+        canal = st.selectbox("Canal", list(_CANALES_LABEL.keys()), format_func=lambda k: _CANALES_LABEL[k])
 
-    with st.expander("Cliente (opcional)"):
-        cliente_nombre = st.text_input("Nombre del cliente")
-        cliente_telefono = st.text_input("Teléfono del cliente")
+        with st.expander("Cliente (opcional)"):
+            cliente_nombre = st.text_input("Nombre del cliente", icon=":material/person:")
+            cliente_telefono = st.text_input("Teléfono del cliente", icon=":material/call:")
 
-    with st.expander("Envío nacional (opcional)"):
-        envio_cobrado = st.number_input("Valor cobrado por el envío", min_value=0, value=0)
-        envio_ciudad = st.text_input("Ciudad destino")
-        envio_transportadora = st.text_input("Transportadora")
-        envio_guia = st.text_input("Número de guía")
+        with st.expander("Envío nacional (opcional)"):
+            envio_cobrado = st.number_input("Valor cobrado por el envío", min_value=0, value=0)
+            envio_ciudad = st.text_input("Ciudad destino")
+            envio_transportadora = st.text_input("Transportadora")
+            envio_guia = st.text_input("Número de guía")
 
     if tipo_descuento == "Porcentaje (%)":
         descuento_dict = {"tipo": "porcentaje", "valor": valor_descuento}
@@ -159,46 +171,60 @@ def render(ctx: ViewContext) -> None:
 
     total_estimado = subtotal - descuento_pesos + int(envio_cobrado)
 
-    st.markdown("### Pago")
-    st.caption("Puedes dividir el pago en dos o más métodos.")
-    idx_pago_eliminar = None
-    for idx, pago in enumerate(st.session_state.vender_pagos):
-        colm, colv, colx = st.columns([2, 2, 1])
-        metodos = list(_METODOS_LABEL.keys())
-        pago["metodo"] = colm.selectbox(
-            "Método",
-            metodos,
-            index=metodos.index(pago["metodo"]) if pago["metodo"] in metodos else 0,
-            format_func=lambda k: _METODOS_LABEL[k],
-            key=f"vender_pago_metodo_{idx}",
-        )
-        pago["monto"] = colv.number_input(
-            "Monto", min_value=0, value=int(pago["monto"]), key=f"vender_pago_monto_{idx}"
-        )
-        if len(st.session_state.vender_pagos) > 1 and colx.button("Quitar", key=f"vender_pago_del_{idx}"):
-            idx_pago_eliminar = idx
-    if idx_pago_eliminar is not None:
-        st.session_state.vender_pagos.pop(idx_pago_eliminar)
-        ctx.rerun()
+    st.markdown(
+        f"""
+        <div class="ot-total-carrito">
+            <div class="ot-total-carrito__etiqueta">Total</div>
+            <div class="ot-total-carrito__valor">{format_cop(total_estimado)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    colb1, colb2 = st.columns(2)
-    if colb1.button("+ Agregar método de pago"):
-        st.session_state.vender_pagos.append({"metodo": "efectivo", "monto": 0})
-        ctx.rerun()
-    if colb2.button("Completar con el total restante"):
-        suma_otros = sum(p["monto"] for p in st.session_state.vender_pagos[:-1])
-        st.session_state.vender_pagos[-1]["monto"] = max(0, total_estimado - suma_otros)
-        ctx.rerun()
+    with card(acento="izquierdo"):
+        titulo_seccion("Pago", centrado=False)
+        st.caption("Puedes dividir el pago en dos o más métodos.")
+        idx_pago_eliminar = None
+        for idx, pago in enumerate(st.session_state.vender_pagos):
+            colm, colv, colx = st.columns([2, 2, 1])
+            metodos = list(_METODOS_LABEL.keys())
+            pago["metodo"] = colm.selectbox(
+                "Método",
+                metodos,
+                index=metodos.index(pago["metodo"]) if pago["metodo"] in metodos else 0,
+                format_func=lambda k: _METODOS_LABEL[k],
+                key=f"vender_pago_metodo_{idx}",
+            )
+            pago["monto"] = colv.number_input(
+                "Monto", min_value=0, value=int(pago["monto"]), key=f"vender_pago_monto_{idx}"
+            )
+            if len(st.session_state.vender_pagos) > 1 and colx.button(
+                "Quitar", key=f"vender_pago_del_{idx}", icon=":material/delete:"
+            ):
+                idx_pago_eliminar = idx
+        if idx_pago_eliminar is not None:
+            st.session_state.vender_pagos.pop(idx_pago_eliminar)
+            ctx.rerun()
 
-    suma_pagos = sum(int(p["monto"]) for p in st.session_state.vender_pagos)
-    st.write(f"Total: **{format_cop(total_estimado)}**  ·  Pagado: **{format_cop(suma_pagos)}**")
-    if suma_pagos != total_estimado:
-        st.warning("La suma de los pagos debe ser exactamente igual al total.")
+        colb1, colb2 = st.columns(2)
+        if colb1.button("Agregar método de pago", icon=":material/add:", use_container_width=True):
+            st.session_state.vender_pagos.append({"metodo": "efectivo", "monto": 0})
+            ctx.rerun()
+        if colb2.button("Completar con el total restante", icon=":material/payments:", use_container_width=True):
+            suma_otros = sum(p["monto"] for p in st.session_state.vender_pagos[:-1])
+            st.session_state.vender_pagos[-1]["monto"] = max(0, total_estimado - suma_otros)
+            ctx.rerun()
+
+        suma_pagos = sum(int(p["monto"]) for p in st.session_state.vender_pagos)
+        st.write(f"Total: **{format_cop(total_estimado)}**  ·  Pagado: **{format_cop(suma_pagos)}**")
+        if suma_pagos != total_estimado:
+            st.warning("La suma de los pagos debe ser exactamente igual al total.")
 
     if st.button(
-        "Confirmar venta",
+        "Cobrar",
         type="primary",
         use_container_width=True,
+        icon=":material/point_of_sale:",
         disabled=(suma_pagos != total_estimado),
     ):
         try:
@@ -244,17 +270,22 @@ def render(ctx: ViewContext) -> None:
 
 def _mostrar_recibo(ctx: ViewContext) -> None:
     venta = st.session_state.vender_recibo
-    st.success(f"Venta {venta.numero} confirmada.")
+    encabezado_pagina("Venta confirmada", icono="task_alt")
+    st.markdown(chip_estado(f"Venta {venta.numero}", "exito"), unsafe_allow_html=True)
     estado_sync = ctx.storage.sync_status()
     if estado_sync.pendientes > 0:
         st.warning(
             "La venta quedó guardada de forma segura, pero todavía no se publicó en la nube. "
             "Se reintentará automáticamente."
         )
-    st.code(generar_texto_recibo(venta), language=None)
+    with card(acento="ninguno", key="ot-card-recibo"):
+        render_logo(72, nombre_archivo="olatata-logo-mono.png")
+        st.code(generar_texto_recibo(venta), language=None)
     telefono = ctx.storage.get_config("telefono_whatsapp")
     url_whatsapp = generar_url_whatsapp(venta, telefono_whatsapp=telefono)
-    st.link_button("Enviar por WhatsApp", url_whatsapp, use_container_width=True)
-    if st.button("Nueva venta", type="primary", use_container_width=True):
+    st.link_button(
+        "Enviar por WhatsApp", url_whatsapp, use_container_width=True, icon=":material/chat:"
+    )
+    if st.button("Nueva venta", type="primary", use_container_width=True, icon=":material/add_shopping_cart:"):
         _nueva_venta()
         ctx.rerun()
