@@ -18,7 +18,9 @@ from core.excel_safe import TextoInvalidoError, excel_safe
 from core.permissions import PermisoDenegadoError, requerir
 from core.timeutil import now_utc, parse_iso_utc, to_iso_utc
 from core.ui import (
+    chip_estado,
     confirmacion_coincide,
+    encabezado_pagina,
     estado_vacio,
     formatear_fecha_hora_local,
     generar_password_temporal,
@@ -34,6 +36,13 @@ CLAVE_NEGOCIO_MENSAJE_RECIBO = "negocio_mensaje_recibo"
 CLAVE_NEGOCIO_CATEGORIAS = "negocio_categorias"
 CLAVE_NEGOCIO_METODOS_PAGO = "negocio_metodos_pago_activos"
 CLAVE_SESION_MINUTOS = "sesion_minutos"
+# Clave distinta que `views/vender.py:255` lee para el enlace de
+# WhatsApp del recibo (ver docs/CONTRATOS.md, sección "Claves de
+# CONFIG" -> "Hallazgo"). Ajustes ahora escribe AMBAS claves al
+# guardar el formulario de negocio, para que cambiar el WhatsApp desde
+# aquí sí se refleje en el recibo sin tener que tocar `views/vender.py`
+# (archivo que no es de A5).
+CLAVE_TELEFONO_WHATSAPP_RECIBO = "telefono_whatsapp"
 _SEP = "|"
 
 
@@ -44,7 +53,7 @@ def render(ctx: ViewContext) -> None:
         st.error(f"No tienes permiso para ver Ajustes: {exc}")
         return
 
-    st.title("Ajustes")
+    encabezado_pagina("Ajustes", "Negocio, usuarios, sincronización y respaldo.")
     tabs = st.tabs(
         ["Negocio", "Usuarios", "Sincronización", "Respaldo", "Integridad", "Cierre de mes"]
     )
@@ -66,7 +75,15 @@ def render(ctx: ViewContext) -> None:
 def _tab_negocio(ctx: ViewContext) -> None:
     storage = ctx.storage
     nombre_actual = storage.get_config(CLAVE_NEGOCIO_NOMBRE, "Ola Tata") or "Ola Tata"
-    whatsapp_actual = storage.get_config(CLAVE_NEGOCIO_WHATSAPP, "") or ""
+    # Si `negocio_whatsapp` todavía no se ha guardado nunca desde este
+    # formulario (instalación nueva sembrada solo por scripts/seed_db.py),
+    # usa `telefono_whatsapp` como valor por defecto para no mostrar el
+    # campo vacío cuando en realidad sí hay un número configurado.
+    whatsapp_actual = (
+        storage.get_config(CLAVE_NEGOCIO_WHATSAPP)
+        or storage.get_config(CLAVE_TELEFONO_WHATSAPP_RECIBO)
+        or ""
+    )
     mensaje_actual = storage.get_config(CLAVE_NEGOCIO_MENSAJE_RECIBO, "") or ""
     categorias_actual = storage.get_config(CLAVE_NEGOCIO_CATEGORIAS, "") or ""
     metodos_defecto = _SEP.join(sorted(schema.METODOS_PAGO))
@@ -120,6 +137,12 @@ def _tab_negocio(ctx: ViewContext) -> None:
         with storage.transaction() as tx:
             tx.set_config(CLAVE_NEGOCIO_NOMBRE, nombre_limpio)
             tx.set_config(CLAVE_NEGOCIO_WHATSAPP, whatsapp_limpio)
+            # Corrige el hallazgo documentado en docs/CONTRATOS.md: el
+            # recibo de venta (views/vender.py) lee `telefono_whatsapp`,
+            # no `negocio_whatsapp`. Se escriben ambas claves para que
+            # el enlace de WhatsApp del recibo quede sincronizado con lo
+            # que un admin configura aquí.
+            tx.set_config(CLAVE_TELEFONO_WHATSAPP_RECIBO, whatsapp_limpio)
             tx.set_config(CLAVE_NEGOCIO_MENSAJE_RECIBO, mensaje_limpio)
             tx.set_config(CLAVE_NEGOCIO_CATEGORIAS, _SEP.join(categorias_lista))
             tx.set_config(CLAVE_NEGOCIO_METODOS_PAGO, _SEP.join(metodos))
@@ -217,7 +240,10 @@ def _fila_usuario(ctx: ViewContext, fila) -> None:
         etiqueta_rol = "Administrador" if fila["rol"] == "admin" else "Vendedor"
         st.write(f"**{fila['nombre']}** ({fila['usuario']}) — {etiqueta_rol}")
     with col2:
-        st.write("Activo" if activo else "Inactivo")
+        if activo:
+            st.markdown(chip_estado("Activo", "exito"), unsafe_allow_html=True)
+        else:
+            st.markdown(chip_estado("Inactivo", "error", icono="pause_circle"), unsafe_allow_html=True)
     with col3:
         clave_mostrar_confirmacion = f"ajustes_confirmar_{fila['id']}"
         accion = "Desactivar" if activo else "Activar"
