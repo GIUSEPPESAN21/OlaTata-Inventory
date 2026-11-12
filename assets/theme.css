@@ -258,9 +258,11 @@ img, [data-testid="stImage"] img {
 .ot-kpi__delta .material-symbols-outlined {
   font-size: 15px;
 }
-.ot-kpi__delta--sube { background: #E3F3EA; color: var(--ot-exito); }
+.ot-kpi__delta--sube { background: #EEF8F2; color: var(--ot-exito); /* #E3F3EA daba 4.40:1 (<4.5:1); #EEF8F2 da 4.66:1 */ }
 .ot-kpi__delta--baja { background: #FBE9E7; color: var(--ot-error); }
-.ot-kpi__delta--neutro { background: var(--ot-rosa-veta); color: var(--ot-dorado-texto); }
+/* --ot-dorado-texto sobre --ot-rosa-veta da 4.09:1 (<4.5:1): mismo
+   hallazgo que en .ot-chip--info / .ot-total-carrito__etiqueta. */
+.ot-kpi__delta--neutro { background: var(--ot-rosa-veta); color: var(--ot-texto-secundario); }
 
 /* --------------------------------------------------------------- botones */
 [data-testid="stBaseButton-primary"],
@@ -532,10 +534,13 @@ button:focus-visible {
   line-height: 1.6;
   white-space: nowrap;
 }
-.ot-chip--exito { background: #E3F3EA; color: var(--ot-exito); }
+.ot-chip--exito { background: #EEF8F2; color: var(--ot-exito); /* #E3F3EA daba 4.40:1 (<4.5:1); #EEF8F2 da 4.66:1 */ }
 .ot-chip--alerta { background: var(--ot-alerta-fondo); color: var(--ot-alerta-texto); }
 .ot-chip--error { background: #FBE9E7; color: var(--ot-error); }
-.ot-chip--info { background: var(--ot-rosa-veta); color: var(--ot-dorado-texto); }
+/* --ot-dorado-texto sobre --ot-rosa-veta da 4.09:1 (<4.5:1, texto chico
+   de un chip): se usa --ot-texto-secundario (4.93:1), hallazgo de A5
+   durante la verificación visual — ver test_theme_contrast.py. */
+.ot-chip--info { background: var(--ot-rosa-veta); color: var(--ot-texto-secundario); }
 
 /* Etiquetas pequeñas en mayúscula con tracking (C3) */
 .ot-etiqueta {
@@ -586,7 +591,10 @@ button:focus-visible {
   letter-spacing: 0.08em;
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--ot-dorado-texto);
+  /* --ot-dorado-texto sobre --ot-rosa-veta da 4.09:1 (<4.5:1, texto
+     chico): se usa --ot-texto-secundario (4.93:1) en su lugar, ver
+     tests/test_theme_contrast.py::test_pares_texto_normal_cumplen_4_5_a_1 */
+  color: var(--ot-texto-secundario);
 }
 .ot-total-carrito__valor {
   font-family: "Inter", sans-serif;

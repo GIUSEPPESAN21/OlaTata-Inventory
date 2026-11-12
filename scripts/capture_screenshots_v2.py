@@ -73,7 +73,41 @@ def shot(page, name: str) -> None:
 
 
 def goto_nav(page, label: str) -> None:
-    page.get_by_role("button", name=label, exact=True).click()
+    """Hace clic en un ítem del menú lateral. A <=576px Streamlit colapsa
+    la barra lateral en un cajón superpuesto (control ">>"/"<<", stable
+    testid `stSidebarCollapsedControl`) — si el botón del menú no está
+    visible todavía, primero se abre ese cajón."""
+    boton = page.get_by_role("button", name=label, exact=True)
+    if boton.count() == 0 or not boton.first.is_visible():
+        control = page.get_by_test_id("stSidebarCollapsedControl")
+        if control.count() > 0:
+            control.first.click()
+            page.wait_for_timeout(500)
+    # `is_visible()` solo mira CSS (display/visibility), no intersección
+    # real con el viewport -- en el cajón superpuesto de móvil el botón
+    # puede ser "visible" para Playwright y aun así quedar fuera del
+    # rectángulo visible, con lo que `.click()` normal (e incluso
+    # `force=True`) se niega a "apuntar" a un punto inexistente en
+    # pantalla. Se dispara el click nativo en el DOM por texto siempre
+    # que la intersección con el viewport sea nula; si es real, se deja
+    # el click normal de Playwright (dispara los mismos eventos que una
+    # persona real, mejor cuando funciona).
+    caja = boton.first.bounding_box()
+    vp = page.viewport_size
+    interseca = bool(
+        caja and vp and caja["x"] < vp["width"] and caja["y"] < vp["height"] and caja["x"] + caja["width"] > 0 and caja["y"] + caja["height"] > 0
+    )
+    if interseca:
+        boton.click()
+    else:
+        page.evaluate(
+            """(texto) => {
+                const botones = Array.from(document.querySelectorAll('[data-testid="stSidebar"] button'));
+                const boton = botones.find((b) => b.textContent.includes(texto));
+                if (boton) boton.click();
+            }""",
+            label,
+        )
     page.wait_for_timeout(1200)
 
 

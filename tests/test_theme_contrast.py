@@ -49,10 +49,24 @@ PARES_TEXTO_NORMAL = [
     (COLOR["error"], COLOR["superficie"], "texto de error sobre superficie"),
     (COLOR["alerta_texto"], COLOR["alerta_fondo"], "texto de alerta sobre fondo de alerta"),
     (COLOR["primario"], COLOR["superficie"], "enlaces/primario sobre superficie"),
+    # Rediseño visual (A5): pares nuevos introducidos por el sistema de
+    # tarjetas/KPI/total del carrito (assets/theme.css). Nota: el chip
+    # "info" y la etiqueta TOTAL usaban antes `dorado_texto` sobre
+    # `rosa_veta` (4.09:1, no pasa 4.5:1 en texto chico) — se corrigió a
+    # `texto_secundario` (4.93:1), por eso aquí solo se fija el par bueno.
+    (COLOR["tinta"], COLOR["rosa_veta"], "tinta sobre rosa veta (total del carrito)"),
+    (COLOR["texto_secundario"], COLOR["rosa_veta"], "texto secundario sobre rosa veta (etiqueta TOTAL, chip info)"),
+    # Fondos literales de los chips/KPI de estado (no son TOKENS con
+    # nombre porque son un matiz MÁS claro que fondo/sidebar, pensado
+    # solo para la píldora): #E3F3EA daba 4.40:1 con `exito` (<4.5:1,
+    # texto chico) -- se aclaró a #EEF8F2 (4.66:1).
+    (COLOR["exito"], "#EEF8F2", "texto de éxito sobre fondo de chip/kpi de éxito"),
+    (COLOR["error"], "#FBE9E7", "texto de error sobre fondo de chip/kpi de error"),
 ]
 
 PARES_TEXTO_GRANDE_O_ICONO = [
     (COLOR["primario"], COLOR["fondo"], "título Playfair (color primario) sobre fondo"),
+    (COLOR["primario"], COLOR["rosa_veta"], "icono de marca sobre rosa veta (círculo de kpi_card/hero)"),
 ]
 
 
