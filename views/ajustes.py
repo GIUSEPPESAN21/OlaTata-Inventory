@@ -220,6 +220,7 @@ def _crear_usuario(ctx: ViewContext, nombre: str, usuario_nuevo: str, rol: str, 
                 password_plano=clave,
                 rol=rol,
                 must_change_password=True,
+                rol_llamador=ctx.usuario.rol,
             )
     except ValueError as exc:
         st.error(str(exc))

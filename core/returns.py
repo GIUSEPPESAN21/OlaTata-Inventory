@@ -7,6 +7,7 @@ vía `storage`, dentro de la misma `transaction()`.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 
 import pandas as pd
 
@@ -149,14 +150,29 @@ def anular_venta(storage, rol: str, numero_venta: str, motivo: str, usuario_id: 
         tx.write_sheet(schema.VENTAS, ventas_df)
 
 
-def _resolver_venta_e_items(storage, venta) -> tuple[str, list[dict]]:
+def _resolver_venta_e_items(storage, venta) -> tuple[str, list[dict], dict[str, int]]:
     """`venta` puede ser:
 
-    - un `numero` (str): se busca en `VENTAS`/`VENTA_ITEMS` VIVAS.
-    - un objeto ya resuelto (dict con `"numero"`/`"items"`, o
-      `core.sales.Venta`): usado directo, sin tocar storage para esa
-      parte — así una venta de un mes ya archivado (consultada aparte en
-      modo solo lectura) puede devolverse igual (R9).
+    - un `numero` (str): se busca en `VENTAS`/`VENTA_ITEMS` VIVAS. El
+      historial de devoluciones previas SIGUE completo en el libro vivo
+      (la venta no se ha archivado), así que no hace falta declarar nada.
+    - un `core.sales.Venta` recién confirmado: usado directo. No puede
+      tener devoluciones previas (se acaba de crear en esta misma
+      corrida), así que tampoco hace falta declarar nada.
+    - un objeto ya resuelto (dict con `"numero"`/`"items"`): usado
+      directo, sin tocar storage para esa parte — así una venta de un
+      mes YA ARCHIVADO (consultada aparte en modo solo lectura) puede
+      devolverse igual (R9). OBLIGATORIO en este caso: el dict debe
+      incluir `"ya_devuelto"` (mapa `producto_id -> cantidad ya
+      devuelta ANTES de esta llamada`), que el llamador calcula leyendo
+      el archivo correspondiente. Sin esto, `ya_devuelto_previo` (más
+      abajo) solo vería la hoja DEVOLUCIONES del libro VIVO, que el
+      cierre de mes vacía (`core.monthly_close`) — permitiendo devolver
+      de más sobre una venta archivada que ya tuvo devoluciones antes de
+      cerrarse el mes (hallazgo CRÍTICO de V2: devolución duplicada
+      cruzando el cierre de mes).
+
+    Devuelve `(numero, items, ya_devuelto_declarado)`.
     """
     if isinstance(venta, str):
         ventas_df = storage.read_sheet(schema.VENTAS)
@@ -169,10 +185,17 @@ def _resolver_venta_e_items(storage, venta) -> tuple[str, list[dict]]:
         venta_id = fila_df.iloc[0]["id"]
         items_df = storage.read_sheet(schema.VENTA_ITEMS)
         items = items_df[items_df["venta_id"] == venta_id].to_dict("records")
-        return venta, items
+        return venta, items, {}
     if isinstance(venta, dict):
-        return venta["numero"], list(venta["items"])
-    return venta.numero, list(venta.items)
+        if "ya_devuelto" not in venta:
+            raise DevolucionInvalidaError(
+                "Para devolver una venta ya resuelta (p.ej. de un mes archivado) hay que "
+                "declarar 'ya_devuelto' (mapa producto_id -> cantidad ya devuelta antes de "
+                "esta llamada): el libro vivo no conserva ese historial tras el cierre de mes."
+            )
+        ya_devuelto_declarado = {str(k): int(v) for k, v in venta["ya_devuelto"].items()}
+        return venta["numero"], list(venta["items"]), ya_devuelto_declarado
+    return venta.numero, list(venta.items), {}
 
 
 def registrar_devolucion_cambio(
@@ -204,7 +227,7 @@ def registrar_devolucion_cambio(
     if not items_devueltos:
         raise DevolucionInvalidaError("La devolución no tiene productos.")
 
-    venta_numero, items_venta_originales = _resolver_venta_e_items(storage, venta)
+    venta_numero, items_venta_originales, ya_devuelto_declarado = _resolver_venta_e_items(storage, venta)
     items_por_producto = {str(it["producto_id"]): it for it in items_venta_originales}
 
     with storage.transaction() as tx:
@@ -246,9 +269,10 @@ def registrar_devolucion_cambio(
                 raise DevolucionInvalidaError(f"'{producto_id}' no está en la venta '{venta_numero}'.")
 
             cantidad_vendida = int(original["cantidad"])
-            ya_devuelto = int(
+            ya_devuelto_vivo = int(
                 ya_devuelto_previo.loc[ya_devuelto_previo["producto_id"] == producto_id, "cantidad"].sum()
             )
+            ya_devuelto = ya_devuelto_vivo + ya_devuelto_declarado.get(producto_id, 0)
             disponible_para_devolver = cantidad_vendida - ya_devuelto
             if cantidad > disponible_para_devolver:
                 raise DevolucionInvalidaError(
@@ -261,7 +285,15 @@ def registrar_devolucion_cambio(
             costo_unitario = int(original["costo_unitario"])
             cantidad_original = cantidad_vendida or 1
             total_linea_original = int(original["total_linea"])
-            monto_item = round_half_up_pesos((total_linea_original / cantidad_original) * cantidad)
+            # R1: dinero jamás float. `total_linea_original / cantidad_original`
+            # con enteros de Python ya es división float (precisión binaria) y
+            # round_half_up_pesos solo opera sobre el resultado YA impreciso —
+            # hace falta el Decimal ANTES de dividir (igual que core/sales.py
+            # y core/costing.py). Hallazgo real de V1: con líneas de 14+
+            # unidades esto desviaba el reembolso en 1 peso.
+            monto_item = round_half_up_pesos(
+                (Decimal(total_linea_original) * Decimal(cantidad)) / Decimal(cantidad_original)
+            )
             reembolso_total += monto_item
 
             dev_item_id = f"DI-{tx.next_counter('devolucion_items'):06d}"

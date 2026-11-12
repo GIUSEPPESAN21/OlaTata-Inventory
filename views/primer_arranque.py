@@ -72,6 +72,7 @@ def render(ctx: ViewContext) -> None:
                     password_plano=clave_elegida,
                     rol="admin",
                     must_change_password=True,
+                    permitir_sin_sesion=True,
                 )
         except ValueError as exc:
             st.error(str(exc))

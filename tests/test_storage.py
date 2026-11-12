@@ -56,6 +56,46 @@ def test_excepcion_dentro_de_transaccion_no_deja_nada_a_medias(tmp_path):
     assert len(st.read_sheet(schema.PROVEEDORES)) == 0  # tampoco quedó en memoria
 
 
+def test_falla_la_persistencia_local_tampoco_deja_nada_a_medias_en_memoria(tmp_path, monkeypatch):
+    """Regresión del hallazgo CRÍTICO de V2 (revisor de atomicidad):
+    antes de este fix, `_persist_and_publish()` se llamaba en un
+    `else:` DESPUÉS del `try/except` de `transaction()` — si fallaba
+    (disco lleno, permiso denegado, un bug real en `_write_workbook`),
+    esa excepción escapaba SIN revertir `self._sheets`, dejando una fila
+    "fantasma" en memoria que una transacción futura, no relacionada,
+    terminaba persistiendo y publicando igual."""
+    st = _nueva_storage(tmp_path)
+
+    def _escritura_rota(path, sheets):
+        raise OSError("disco lleno (simulado)")
+
+    monkeypatch.setattr(st, "_write_workbook", _escritura_rota)
+
+    with pytest.raises(OSError):
+        with st.transaction() as tx:
+            df = tx.read_sheet(schema.PROVEEDORES)
+            fantasma = pd.DataFrame(
+                [{"id": "P-FANTASMA", "nombre": "No debería persistir", "telefono": "", "ciudad": "", "notas": "", "created_at": "", "updated_at": ""}]
+            )
+            tx.write_sheet(schema.PROVEEDORES, pd.concat([df, fantasma], ignore_index=True))
+
+    assert not st.local_path.exists()  # la escritura local nunca llegó a completarse
+    assert len(st.read_sheet(schema.PROVEEDORES)) == 0  # y tampoco quedó la fila fantasma en memoria
+
+    # Una transacción POSTERIOR, no relacionada, no debe heredar la fila
+    # fantasma ni fallar por su culpa.
+    monkeypatch.undo()
+    with st.transaction() as tx:
+        df = tx.read_sheet(schema.PROVEEDORES)
+        real = pd.DataFrame(
+            [{"id": "P-REAL", "nombre": "Proveedor real", "telefono": "", "ciudad": "", "notas": "", "created_at": "", "updated_at": ""}]
+        )
+        tx.write_sheet(schema.PROVEEDORES, pd.concat([df, real], ignore_index=True))
+
+    df_final = st.read_sheet(schema.PROVEEDORES)
+    assert list(df_final["id"]) == ["P-REAL"]
+
+
 def test_backup_bak_se_crea_en_la_segunda_escritura(tmp_path):
     st = _nueva_storage(tmp_path)
     with st.transaction() as tx:

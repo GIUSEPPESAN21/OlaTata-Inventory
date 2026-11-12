@@ -257,6 +257,7 @@ def test_venta_de_mes_archivado_se_puede_resolver_desde_fuera(storage):
                 "total_linea": 180_000,
             }
         ],
+        "ya_devuelto": {},
     }
     _seed_producto(storage, stock=5)
     dev = registrar_devolucion_cambio(
@@ -272,3 +273,119 @@ def test_venta_de_mes_archivado_se_puede_resolver_desde_fuera(storage):
     assert dev.reembolso_monto == 90_000
     stock_df = storage.read_sheet(schema.STOCK)
     assert int(stock_df.iloc[0]["cantidad"]) == 6  # 5 + 1 repuesto
+
+
+def test_reembolso_no_pierde_un_peso_por_division_float_en_linea_de_14_unidades(storage):
+    """Regresión del hallazgo CRÍTICO de V1 (revisor dinero y tiempo): R1
+    exige que el dinero NUNCA pase por `float`. `(total_linea_original /
+    cantidad_original) * cantidad` con enteros de Python YA es división
+    float antes de llegar a `round_half_up_pesos` — con una línea de 14
+    unidades (`total_linea=115`) y devolución parcial de 7, el valor
+    exacto es 115*7/14 = 57.5 (redondeo mitad arriba = 58), pero el
+    camino por `float` binario daba 57.499999999999986 -> redondeaba a 57."""
+    venta_resuelta = {
+        "numero": "2026-02-0007",
+        "items": [
+            {
+                "producto_id": "P-1",
+                "nombre_snapshot": "Bolso Negro",
+                "cantidad": 14,
+                "precio_unitario": 10,
+                "costo_unitario": 1,
+                "total_linea": 115,
+            }
+        ],
+        "ya_devuelto": {},
+    }
+    _seed_producto(storage, stock=20)
+    dev = registrar_devolucion_cambio(
+        storage,
+        VENDEDOR,
+        venta_resuelta,
+        items_devueltos=[{"producto_id": "P-1", "cantidad": 7, "destino": "stock"}],
+        tipo="devolucion",
+        motivo="Prueba de precisión de redondeo",
+        reembolso_metodo="efectivo",
+    )
+    assert dev.reembolso_monto == 58
+
+
+def test_venta_ya_resuelta_sin_ya_devuelto_declarado_falla_claro(storage):
+    """Regresión del hallazgo CRÍTICO de V2 (revisor de atomicidad):
+    antes de este fix, una venta de un mes archivado (pasada como dict)
+    NUNCA declaraba cuánto se le había devuelto antes del cierre —
+    `ya_devuelto_previo` solo consultaba la hoja DEVOLUCIONES del libro
+    VIVO, que el cierre de mes vacía. Ahora el dict debe declarar
+    'ya_devuelto' explícitamente o la función rechaza la llamada, en vez
+    de asumir en silencio que no hubo devoluciones previas."""
+    venta_sin_declarar = {
+        "numero": "2026-01-0099",
+        "items": [
+            {
+                "producto_id": "P-1",
+                "nombre_snapshot": "Bolso Negro",
+                "cantidad": 3,
+                "precio_unitario": 90_000,
+                "costo_unitario": 50_000,
+                "total_linea": 270_000,
+            }
+        ],
+        # sin "ya_devuelto": debe rechazarse, no asumir 0 en silencio.
+    }
+    _seed_producto(storage, stock=5)
+    with pytest.raises(DevolucionInvalidaError, match="ya_devuelto"):
+        registrar_devolucion_cambio(
+            storage,
+            VENDEDOR,
+            venta_sin_declarar,
+            items_devueltos=[{"producto_id": "P-1", "cantidad": 1, "destino": "stock"}],
+            tipo="devolucion",
+            motivo="Sin declarar ya_devuelto",
+            reembolso_metodo="efectivo",
+        )
+
+
+def test_venta_archivada_no_permite_devolver_mas_de_lo_que_ya_declara_devuelto(storage):
+    """Con `ya_devuelto` correctamente declarado por el llamador (lo que
+    debería leer del archivo), una venta de 3 unidades con 2 ya
+    devueltas antes del cierre solo deja devolver 1 más — exactamente el
+    invariante que el hallazgo de V2 mostró que se podía romper."""
+    venta_con_historial = {
+        "numero": "2026-01-0100",
+        "items": [
+            {
+                "producto_id": "P-1",
+                "nombre_snapshot": "Bolso Negro",
+                "cantidad": 3,
+                "precio_unitario": 90_000,
+                "costo_unitario": 50_000,
+                "total_linea": 270_000,
+            }
+        ],
+        "ya_devuelto": {"P-1": 2},
+    }
+    _seed_producto(storage, stock=5)
+
+    # La unidad restante (1) sí se puede devolver.
+    dev = registrar_devolucion_cambio(
+        storage,
+        VENDEDOR,
+        venta_con_historial,
+        items_devueltos=[{"producto_id": "P-1", "cantidad": 1, "destino": "stock"}],
+        tipo="devolucion",
+        motivo="Última unidad disponible",
+        reembolso_metodo="efectivo",
+    )
+    assert dev.reembolso_monto == 90_000
+
+    # Pedir una unidad MÁS (ya no queda ninguna: 3 vendidas - 2 - 1 = 0) falla.
+    with pytest.raises(DevolucionInvalidaError, match="disponibles"):
+        registrar_devolucion_cambio(
+            storage,
+            VENDEDOR,
+            venta_con_historial,
+            items_devueltos=[{"producto_id": "P-1", "cantidad": 1, "destino": "stock"}],
+            tipo="devolucion",
+            motivo="Ya no debería quedar nada",
+            reembolso_metodo="efectivo",
+        )

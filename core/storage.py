@@ -128,18 +128,29 @@ class Storage:
     def transaction(self) -> Iterator["Storage"]:
         """Sección crítica atómica. Al salir SIN excepción, persiste a
         disco de forma atómica y publica de forma síncrona a GitHub. Si
-        hay excepción, descarta todo cambio (no queda nada a medias, R6)."""
+        hay excepción, descarta todo cambio (no queda nada a medias, R6).
+
+        `_persist_and_publish()` se llama DENTRO del `try` (no en un
+        `else` después de él, como antes): si la escritura local falla
+        a mitad de camino (disco lleno, permiso denegado, un bug en
+        `fastxlsx`), esa excepción debe revertir también la memoria —
+        si no, una fila nunca escrita a disco queda "fantasma" en
+        `self._sheets` y una transacción futura, no relacionada, la
+        persiste y publica igual (hallazgo CRÍTICO de V2). La
+        publicación a GitHub en sí (`_publish_to_github`) nunca
+        propaga excepción — ver su propio manejo de errores — así que
+        esto no cambia el comportamiento "offline-safe" ya documentado.
+        """
         with self._lock:
             self._ensure_loaded()
             respaldo = {k: v.copy() for k, v in self._sheets.items()}
             self._in_transaction = True
             try:
                 yield self
+                self._persist_and_publish()
             except Exception:
                 self._sheets = respaldo
                 raise
-            else:
-                self._persist_and_publish()
             finally:
                 self._in_transaction = False
 

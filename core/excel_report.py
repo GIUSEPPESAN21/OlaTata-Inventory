@@ -115,10 +115,10 @@ def exportar_periodo_excel(
 
     _hoja_resumen(wb, tipo, fecha_local, kpis, rol)
     _hoja_ventas(wb, datos.ventas)
-    _hoja_productos_vendidos(wb, datos.venta_items)
+    _hoja_productos_vendidos(wb, datos.venta_items, rol)
     _hoja_pagos(wb, datos.pagos)
-    _hoja_devoluciones(wb, datos.devoluciones, datos.devolucion_items)
-    _hoja_inventario_actual(wb, storage)
+    _hoja_devoluciones(wb, datos.devoluciones, datos.devolucion_items, rol)
+    _hoja_inventario_actual(wb, storage, rol)
 
     # R11: ninguna celda de texto se guarda jamás como fórmula, sin
     # importar con qué carácter empiece (p.ej. "=1+1") — misma protección
@@ -199,13 +199,28 @@ _COLS_ITEMS = [
     "total_linea",
 ]
 
+# Columnas que revelan costo/margen (R1 §10): un vendedor sin
+# "ver_analisis_completo" NUNCA debe verlas, ni en pantalla ni en el
+# Excel exportado. Hallazgo ALTO de V3: `_hoja_inventario_actual` ya
+# filtraba esto en el Resumen, pero NO aquí ni en "Devoluciones" — un
+# vendedor podía exportar y ver costos reales igual.
+_COLS_COSTO = {"costo", "costo_unitario", "valor_al_costo"}
 
-def _hoja_productos_vendidos(wb, venta_items) -> None:
+
+def _sin_columnas_de_costo(columnas: list[str], tiene_completo: bool) -> list[str]:
+    if tiene_completo:
+        return columnas
+    return [c for c in columnas if c not in _COLS_COSTO]
+
+
+def _hoja_productos_vendidos(wb, venta_items, rol: str) -> None:
+    tiene_completo = tiene_capacidad(rol, "ver_analisis_completo")
+    columnas = _sin_columnas_de_costo(_COLS_ITEMS, tiene_completo)
     ws = wb.create_sheet("Productos vendidos")
-    _encabezado(ws, 1, _COLS_ITEMS)
+    _encabezado(ws, 1, columnas)
     registros = venta_items.to_dict("records") if not venta_items.empty else []
-    _escribir_filas(ws, 2, registros, _COLS_ITEMS)
-    _autoajustar(ws, _COLS_ITEMS)
+    _escribir_filas(ws, 2, registros, columnas)
+    _autoajustar(ws, columnas)
 
 
 _COLS_PAGOS = ["venta_id", "metodo", "monto", "referencia", "fecha_hora_utc"]
@@ -223,7 +238,9 @@ _COLS_DEVOLUCIONES = ["numero", "venta_numero", "fecha_hora_utc", "tipo", "motiv
 _COLS_DEVOLUCION_ITEMS = ["devolucion_id", "producto_id", "nombre_snapshot", "cantidad", "precio_unitario", "costo_unitario", "destino"]
 
 
-def _hoja_devoluciones(wb, devoluciones, devolucion_items) -> None:
+def _hoja_devoluciones(wb, devoluciones, devolucion_items, rol: str) -> None:
+    tiene_completo = tiene_capacidad(rol, "ver_analisis_completo")
+    columnas_items = _sin_columnas_de_costo(_COLS_DEVOLUCION_ITEMS, tiene_completo)
     ws = wb.create_sheet("Devoluciones")
     _encabezado(ws, 1, _COLS_DEVOLUCIONES)
     registros = devoluciones.to_dict("records") if not devoluciones.empty else []
@@ -231,18 +248,20 @@ def _hoja_devoluciones(wb, devoluciones, devolucion_items) -> None:
 
     fila_items = len(registros) + 4
     ws.cell(row=fila_items - 1, column=1, value="Líneas devueltas").font = Font(bold=True)
-    _encabezado(ws, fila_items, _COLS_DEVOLUCION_ITEMS, fill=_FILL_DORADO)
+    _encabezado(ws, fila_items, columnas_items, fill=_FILL_DORADO)
     registros_items = devolucion_items.to_dict("records") if not devolucion_items.empty else []
-    _escribir_filas(ws, fila_items + 1, registros_items, _COLS_DEVOLUCION_ITEMS)
+    _escribir_filas(ws, fila_items + 1, registros_items, columnas_items)
     _autoajustar(ws, _COLS_DEVOLUCIONES)
 
 
 _COLS_INVENTARIO = ["producto_id", "nombre", "categoria", "stock", "costo", "precio", "valor_al_costo", "valor_al_precio"]
 
 
-def _hoja_inventario_actual(wb, storage) -> None:
+def _hoja_inventario_actual(wb, storage, rol: str) -> None:
+    tiene_completo = tiene_capacidad(rol, "ver_analisis_completo")
+    columnas = _sin_columnas_de_costo(_COLS_INVENTARIO, tiene_completo)
     ws = wb.create_sheet("Inventario actual")
-    _encabezado(ws, 1, _COLS_INVENTARIO)
+    _encabezado(ws, 1, columnas)
 
     productos = storage.read_sheet(schema.PRODUCTOS)
     stock = storage.read_sheet(schema.STOCK)
@@ -271,11 +290,14 @@ def _hoja_inventario_actual(wb, storage) -> None:
                 "valor_al_precio": cantidad * precio,
             }
         )
-    _escribir_filas(ws, 2, registros, _COLS_INVENTARIO)
-    _autoajustar(ws, _COLS_INVENTARIO)
+    _escribir_filas(ws, 2, registros, columnas)
+    _autoajustar(ws, columnas)
 
     total_costo, total_precio = valor_inventario(storage).values()
     fila_total = len(registros) + 3
     ws.cell(row=fila_total, column=1, value="TOTAL").font = Font(bold=True)
-    ws.cell(row=fila_total, column=7, value=total_costo).font = Font(bold=True)
-    ws.cell(row=fila_total, column=8, value=total_precio).font = Font(bold=True)
+    col_precio = columnas.index("valor_al_precio") + 1
+    ws.cell(row=fila_total, column=col_precio, value=total_precio).font = Font(bold=True)
+    if tiene_completo:
+        col_costo = columnas.index("valor_al_costo") + 1
+        ws.cell(row=fila_total, column=col_costo, value=total_costo).font = Font(bold=True)

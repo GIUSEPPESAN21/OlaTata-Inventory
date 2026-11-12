@@ -10,7 +10,15 @@ from core.analytics import kpis_hoy, kpis_mes
 from core.excel_report import exportar_periodo_excel
 from core.money import format_cop
 from core.permissions import ADMIN, VENDEDOR
-from tests.fixtures_analytics import construir_storage, item, producto, stock_fila, venta
+from tests.fixtures_analytics import (
+    construir_storage,
+    devolucion,
+    devolucion_item,
+    item,
+    producto,
+    stock_fila,
+    venta,
+)
 
 HOY = date(2026, 11, 10)
 
@@ -111,6 +119,61 @@ def test_excel_hoja_inventario_actual_coincide_con_valor_inventario():
     assert fila_total is not None
     assert fila_total[6].value == inv["al_costo"]
     assert fila_total[7].value == inv["al_precio"]
+
+
+def test_excel_vendedor_no_ve_costo_en_productos_vendidos_ni_inventario_ni_devoluciones():
+    """Regresión del hallazgo ALTO de V3 (revisor de seguridad):
+    `_hoja_resumen` ya filtraba costo/ganancia para un vendedor, pero
+    "Productos vendidos", "Devoluciones" e "Inventario actual" seguían
+    escribiendo `costo_unitario`/`costo`/`valor_al_costo` sin importar
+    el rol — un vendedor podía exportar el Excel y ver costos reales
+    igual, saltándose el filtro de la pantalla."""
+    storage = construir_storage(
+        ventas=[venta("V1", "2026-11-0001", "2026-11-10T15:00:00+00:00", "2026-11-10", total=95_000)],
+        venta_items=[
+            item("I1", "V1", "P1", "Bolso rosa", cantidad=2, precio_unitario=50_000, costo_unitario=18_000, total_linea=95_000),
+        ],
+        devoluciones=[devolucion("D1", "2026-11-DEV-0001", "V1", "2026-11-10T16:00:00+00:00", "2026-11-10")],
+        devolucion_items=[devolucion_item("DI1", "D1", "P1", "Bolso rosa", 1, 50_000, 18_000)],
+        productos=[producto("P1", "Bolso rosa", costo=18_000, precio=55_000)],
+        stock=[stock_fila("P1", 7)],
+    )
+    contenido = exportar_periodo_excel(storage, "dia", HOY, VENDEDOR)
+    wb = openpyxl.load_workbook(io.BytesIO(contenido))
+
+    encabezados_items = [c.value for c in next(wb["Productos vendidos"].iter_rows(min_row=1, max_row=1))]
+    assert "costo_unitario" not in encabezados_items
+
+    encabezados_inv = [c.value for c in next(wb["Inventario actual"].iter_rows(min_row=1, max_row=1))]
+    assert "costo" not in encabezados_inv
+    assert "valor_al_costo" not in encabezados_inv
+    assert "valor_al_precio" in encabezados_inv  # el precio de venta sí es visible para el vendedor
+
+    ws_dev = wb["Devoluciones"]
+    encabezados_dev_items = None
+    for fila in ws_dev.iter_rows(min_row=2):
+        if fila[0].value == "Líneas devueltas":
+            fila_encabezado = fila[0].row + 1
+            encabezados_dev_items = [c.value for c in ws_dev[fila_encabezado]]
+            break
+    assert encabezados_dev_items is not None
+    assert "costo_unitario" not in encabezados_dev_items
+
+
+def test_excel_admin_si_ve_columnas_de_costo_en_las_mismas_hojas():
+    storage = construir_storage(
+        venta_items=[
+            item("I1", "V1", "P1", "Bolso rosa", cantidad=2, precio_unitario=50_000, costo_unitario=18_000, total_linea=95_000),
+        ],
+        productos=[producto("P1", "Bolso rosa", costo=18_000, precio=55_000)],
+        stock=[stock_fila("P1", 7)],
+    )
+    contenido = exportar_periodo_excel(storage, "dia", HOY, ADMIN)
+    wb = openpyxl.load_workbook(io.BytesIO(contenido))
+    encabezados_items = [c.value for c in next(wb["Productos vendidos"].iter_rows(min_row=1, max_row=1))]
+    assert "costo_unitario" in encabezados_items
+    encabezados_inv = [c.value for c in next(wb["Inventario actual"].iter_rows(min_row=1, max_row=1))]
+    assert "costo" in encabezados_inv and "valor_al_costo" in encabezados_inv
 
 
 def test_excel_texto_con_formula_no_se_interpreta():

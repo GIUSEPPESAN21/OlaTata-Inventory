@@ -18,7 +18,7 @@ from core.timeutil import now_utc, to_iso_utc
 def _crear_admin(storage, usuario="joseph", password="Clave1234"):
     with storage.transaction() as tx:
         uid = auth.crear_usuario(
-            tx, nombre="Joseph", usuario=usuario, password_plano=password, rol="admin"
+            tx, nombre="Joseph", usuario=usuario, password_plano=password, rol="admin", permitir_sin_sesion=True
         )
     return uid
 
@@ -88,7 +88,7 @@ def test_sesion_es_valida_rechaza_epoch_desactualizado(storage):
     logout en el siguiente rerun (§10)."""
     uid = _crear_admin(storage)
     with storage.transaction() as tx:
-        auth.cambiar_password(tx, uid, "NuevaClave999")
+        auth.cambiar_password(tx, uid, "NuevaClave999", rol_llamador="admin", llamador_id=uid)
     sesion_vieja = {
         "usuario_id": uid,
         "session_epoch": 1,  # ya no coincide (ahora es 2)

@@ -153,7 +153,13 @@ def _vista_cambiar_password(storage, sesion: dict) -> None:
         else:
             try:
                 with storage.transaction() as tx:
-                    auth.cambiar_password(tx, sesion["usuario_id"], nueva)
+                    auth.cambiar_password(
+                        tx,
+                        sesion["usuario_id"],
+                        nueva,
+                        rol_llamador=sesion["rol"],
+                        llamador_id=sesion["usuario_id"],
+                    )
             except Exception as exc:  # nunca una traza de Python visible (§6)
                 mensaje, _codigo = mensaje_error_amable(exc, contexto="cambiar_password")
                 st.error(mensaje)

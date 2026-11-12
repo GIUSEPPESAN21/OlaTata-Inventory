@@ -132,11 +132,11 @@ def crear_usuarios_demo(storage) -> dict[str, str]:
     with storage.transaction() as tx:
         ids["admin"] = crear_usuario(
             tx, nombre="Admin Demo", usuario="admin.demo", password_plano="Demo-12345", rol=ADMIN,
-            must_change_password=False,
+            must_change_password=False, permitir_sin_sesion=True,
         )
         ids["vendedor"] = crear_usuario(
             tx, nombre="Vendedora Demo", usuario="vendedora.demo", password_plano="Demo-12345", rol=VENDEDOR,
-            must_change_password=False,
+            must_change_password=False, permitir_sin_sesion=True,
         )
     return ids
 

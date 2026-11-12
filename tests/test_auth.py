@@ -7,7 +7,13 @@ from core.timeutil import now_utc
 def _crear_admin(storage, usuario="joseph", password="Clave1234"):
     with storage.transaction() as tx:
         uid = auth.crear_usuario(
-            tx, nombre="Joseph", usuario=usuario, password_plano=password, rol="admin", must_change_password=True
+            tx,
+            nombre="Joseph",
+            usuario=usuario,
+            password_plano=password,
+            rol="admin",
+            must_change_password=True,
+            permitir_sin_sesion=True,
         )
     return uid
 
@@ -63,7 +69,9 @@ def test_no_se_puede_crear_usuario_duplicado(storage):
     _crear_admin(storage)
     with storage.transaction() as tx:
         try:
-            auth.crear_usuario(tx, nombre="Otro", usuario="joseph", password_plano="x", rol="vendedor")
+            auth.crear_usuario(
+                tx, nombre="Otro", usuario="joseph", password_plano="x", rol="vendedor", rol_llamador="admin"
+            )
             assert False, "debía lanzar ValueError"
         except ValueError:
             pass
@@ -72,7 +80,7 @@ def test_no_se_puede_crear_usuario_duplicado(storage):
 def test_cambiar_password_incrementa_session_epoch_y_quita_flag(storage):
     uid = _crear_admin(storage)
     with storage.transaction() as tx:
-        auth.cambiar_password(tx, uid, "NuevaClave999")
+        auth.cambiar_password(tx, uid, "NuevaClave999", rol_llamador="admin", llamador_id=uid)
     df = storage.read_sheet("usuarios")
     fila = df[df["id"] == uid].iloc[0]
     assert int(fila["session_epoch"]) == 2
@@ -83,7 +91,7 @@ def test_cambiar_password_incrementa_session_epoch_y_quita_flag(storage):
 def test_validar_sesion_rechaza_epoch_desactualizado(storage):
     uid = _crear_admin(storage)
     with storage.transaction() as tx:
-        auth.cambiar_password(tx, uid, "NuevaClave999")
+        auth.cambiar_password(tx, uid, "NuevaClave999", rol_llamador="admin", llamador_id=uid)
     # sesión vieja con epoch=1 ya no es válida tras el cambio de clave (epoch=2)
     assert not auth.validar_sesion(storage, uid, session_epoch=1, ultima_actividad_utc=now_utc())
 

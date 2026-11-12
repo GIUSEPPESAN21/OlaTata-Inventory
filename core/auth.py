@@ -14,7 +14,7 @@ import bcrypt
 import pandas as pd
 
 from core import schema
-from core.permissions import ADMIN, VENDEDOR
+from core.permissions import ADMIN, VENDEDOR, requerir
 from core.timeutil import now_utc, to_iso_utc
 
 MAX_INTENTOS = 5
@@ -152,10 +152,31 @@ def crear_usuario(
     password_plano: str,
     rol: str,
     must_change_password: bool = True,
+    rol_llamador: str | None = None,
+    permitir_sin_sesion: bool = False,
 ) -> str:
-    """Debe llamarse dentro de `storage.transaction()`. Devuelve el id creado."""
+    """Debe llamarse dentro de `storage.transaction()`. Devuelve el id creado.
+
+    Revalida permisos (§10) AQUÍ, no solo en la vista: por defecto exige
+    `requerir(rol_llamador, "gestionar_usuarios")` — pásale el rol de
+    quien llama (p.ej. `ctx.usuario.rol` en `views/ajustes.py`). Sin
+    `rol_llamador` (`None`), la revalidación falla sola con
+    `PermisoDenegadoError`, así que un llamador que se olvide de pasarlo
+    NUNCA crea un usuario por accidente.
+
+    `permitir_sin_sesion=True` es la ÚNICA forma de saltarse esa
+    revalidación, reservada para los dos casos donde de verdad no existe
+    ninguna sesión con rol: el asistente de primer arranque
+    (`views/primer_arranque.py`, libro de usuarios vacío) y los scripts
+    de siembra de confianza (`scripts/seed_demo.py`). En el primer caso
+    (libro vacío) el rol pedido debe ser admin."""
     if rol not in (ADMIN, VENDEDOR):
         raise ValueError(f"Rol inválido: {rol}")
+    if permitir_sin_sesion:
+        if storage.read_sheet(schema.USUARIOS).empty and rol != ADMIN:
+            raise ValueError("El primer usuario (primer arranque) debe ser administrador.")
+    else:
+        requerir(rol_llamador, "gestionar_usuarios")
     df = storage.read_sheet(schema.USUARIOS)
     if (df["usuario"] == usuario).any():
         raise ValueError(f"El usuario '{usuario}' ya existe.")
@@ -181,9 +202,25 @@ def crear_usuario(
     return nuevo_id
 
 
-def cambiar_password(storage, usuario_id: str, password_nuevo_plano: str) -> None:
+def cambiar_password(
+    storage,
+    usuario_id: str,
+    password_nuevo_plano: str,
+    *,
+    rol_llamador: str | None = None,
+    llamador_id: str | None = None,
+) -> None:
     """Debe llamarse dentro de `storage.transaction()`. Incrementa
-    `session_epoch` para revocar sesiones activas en otros dispositivos."""
+    `session_epoch` para revocar sesiones activas en otros dispositivos.
+
+    Revalida permisos (§10) AQUÍ: el llamador solo puede cambiar SU
+    PROPIA clave (`usuario_id == llamador_id`); para cambiar la de otro
+    usuario (reseteo por un admin) necesita la capacidad
+    "gestionar_usuarios". Sin `llamador_id`/`rol_llamador`, cualquier
+    cambio se trata como "clave ajena" y exige permiso — así un llamador
+    que se olvide de pasarlos nunca cambia una clave por accidente."""
+    if usuario_id != llamador_id:
+        requerir(rol_llamador, "gestionar_usuarios")
     df = storage.read_sheet(schema.USUARIOS)
     coincide = df["id"] == usuario_id
     if not coincide.any():
