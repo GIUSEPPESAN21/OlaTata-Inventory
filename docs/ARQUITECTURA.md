@@ -3,6 +3,32 @@
 Documento técnico breve. Para la API congelada de cada módulo, ver
 `docs/CONTRATOS.md`.
 
+## Vista general
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Streamlit (app.py — solo enrutado/sesión)                  │
+│    ├─ views/login.py, primer_arranque.py                    │
+│    └─ views/{vender,ventas,inventario,analisis,ajustes}.py  │
+│         └─ render(ctx: ViewContext)                         │
+├─────────────────────────────────────────────────────────────┤
+│  core/  (lógica de negocio pura, sin Streamlit)              │
+│    permissions.py → requerir(rol, capacidad) en cada función │
+│    sales.py / returns.py / inventory.py / monthly_close.py…  │
+│    storage.py → Storage.transaction() [lock + atómico]       │
+│         ├─ fastxlsx.py  (escritura OOXML rápida)             │
+│         └─ archive.py   (libros de cierre, SHA-256, INDEX)   │
+├─────────────────────────────────────────────────────────────┤
+│  OLATATA_DB.xlsx (disco local)  ←→  GitHub Contents API      │
+└─────────────────────────────────────────────────────────────┘
+        │ publica (PUT, SHA conocido)      │ publica cierres
+        ▼                                   ▼
+┌───────────────────────┐          ┌──────────────────────────┐
+│ OlaTata-Database       │          │ OlaTata-Archive            │
+│ (privado, libro vivo)  │          │ (privado, cierres/AAAA-MM) │
+└───────────────────────┘          └──────────────────────────┘
+```
+
 ## Esquema de datos
 
 El libro vivo (`OlaTata-Database`) es un único `.xlsx` con 13 hojas
@@ -87,3 +113,155 @@ bandera de intención, sino del estado observable real
 mutación del paso 4, nunca permite cerrar el mes en curso o uno futuro
 en Bogotá, y si el mes ya estaba cerrado devuelve de inmediato
 `ResultadoCierre(ya_estaba_cerrado=True)` sin repetir ningún trabajo.
+
+## Publicación síncrona a GitHub y control de conflicto por SHA
+
+`core/storage.py` es la única pieza que habla con la red. Fuera de una
+`transaction()`, `read_sheet`/`get_config` solo leen lo que ya está en
+memoria (cargado una vez desde `OLATATA_DB.xlsx` local). Dentro de una
+`transaction()` que sale sin excepción, `_persist_and_publish()` hace,
+en orden:
+
+1. **Escritura local atómica** (`_write_local_atomic`): construye el
+   `.xlsx` nuevo con `core/fastxlsx.py` en un archivo temporal, copia el
+   archivo anterior a `.bak`, y solo entonces `os.replace()` lo
+   reemplaza — si el proceso muere a mitad de la escritura, el archivo
+   `OLATATA_DB.xlsx` nunca queda a medio escribir (el `os.replace` del
+   sistema operativo es la única operación "visible" y es atómica).
+2. **Publicación a GitHub** (`_publish_to_github`, solo si
+   `sync_enabled`): lee el `.xlsx` recién escrito y lo sube con un
+   `PUT /repos/{repo}/contents/{path}`.
+
+El control de conflicto es por **SHA**, el mismo mecanismo que usa la
+API de contenidos de GitHub para control de concurrencia optimista:
+
+- Antes de cada `PUT`, `_github_get_sha` pide el SHA **real** actual
+  del archivo en GitHub con un `GET`.
+- Si `Storage` ya conocía un SHA remoto de una publicación anterior
+  propia (`self._known_remote_sha`) y ese SHA **no coincide** con el
+  real recién obtenido, significa que algo cambió el archivo remoto
+  desde la última publicación de esta misma instancia — se lanza
+  `ConflictoDeSincronizacionError` **sin intentar el `PUT`**, se marca
+  `sync_status().en_conflicto = True`, y el contenido remoto **nunca se
+  sobrescribe**.
+- Si no hay conflicto, el `PUT` manda el SHA real como parte del
+  payload (requisito de la API de GitHub para actualizar un archivo
+  existente) y, si GitHub responde `409`/`422` (carrera transitoria con
+  otro proceso), reintenta hasta `_PUT_RACE_RETRIES = 2` veces antes de
+  rendirse con el mismo error de conflicto.
+- Si GitHub no responde en absoluto (red caída, timeout): la venta ya
+  quedó a salvo en el paso 1 (disco local); `_publish_to_github` atrapa
+  la excepción, nunca la deja subir hasta `app.py`, y solo incrementa
+  `sync_status().pendientes` para que Ajustes → Sincronización lo
+  muestre.
+
+`self._known_remote_sha` vive **en memoria del proceso**, no en disco:
+un reinicio de la app empieza sin SHA conocido, así que su primera
+publicación nunca compara contra nada viejo (ver `DEPLOY.md`, sección
+"Restaurar una versión anterior", para la implicación práctica de esto
+al restaurar un commit manualmente).
+
+**Hallazgo de documentación (no es un bug de `core/storage.py`, es una
+limitación real de `views/ajustes.py`):** la pestaña "Sincronización"
+de Ajustes detecta y muestra un conflicto (`sync_status().en_conflicto`)
+pero **no** lo resuelve — solo deja constancia en texto de qué versión
+se prefiere (local o remota). `core/storage.py` no expone todavía una
+función para aplicar esa elección byte a byte; hoy la resolución real
+ocurre por fuera de la app (ver `DEPLOY.md`).
+
+## Contrato de permisos (`core/permissions.py`)
+
+Dos roles fijos, `admin` y `vendedor` (`core/schema.py:ROLES`), cada uno
+con un conjunto de "capacidades" (strings) en `CAPABILITIES`. Dos capas
+de aplicación, ninguna opcional:
+
+- **UI** (`views/__init__.py:vistas_visibles_para_rol`): filtra qué
+  pantallas aparecen en el menú lateral según una capacidad por vista
+  (`VIEWS[i]["permiso"]`). Esto es solo cosmético — oculta un botón, no
+  protege nada por sí mismo.
+- **Dominio** (`core/*.py`): toda función sensible llama
+  `permissions.requerir(rol, "capacidad")` como primera línea, y lanza
+  `PermisoDenegadoError` si el rol no la tiene. Esta es la capa real:
+  aunque alguien invocara la función directamente (sin pasar por la
+  vista), la revalidación ocurre igual.
+
+Capacidad usada por `views/__init__.py` para decidir qué pantallas
+muestra el menú, hoy en el código:
+
+| Vista | Capacidad que la habilita | ¿La tiene `vendedor`? |
+|---|---|---|
+| Vender | `vender` | sí |
+| Ventas | `vender` | sí |
+| Inventario | `gestionar_inventario` | no |
+| Análisis | `ver_analisis_basico` | **sí** |
+| Ajustes | `configurar_negocio` | no |
+
+Dentro de Análisis, una segunda capacidad (`ver_analisis_completo`, que
+solo tiene `admin`) decide si se muestran costo y ganancia —
+`views/analisis.py` oculta esas columnas para quien no la tenga, y
+`core/analytics.py` ya omite esas claves del resultado para ese caso
+(defensa en profundidad: aunque la vista tuviera un bug de presentación,
+el dato sensible nunca llega siquiera al diccionario que se renderiza).
+
+## Contrato de claves de `CONFIG` (`core/config_keys.py`)
+
+La hoja `config` es clave/valor libre (sin columnas fijas más allá de
+`clave`/`valor`/fechas), lo que la hace fácil de romper por error de
+tipeo. `core/config_keys.py` es la fuente ejecutable de verdad de qué
+claves existen de verdad hoy: `tests/test_config_keys_contrato.py`
+escanea `app.py`, `core/*.py`, `views/*.py` y `scripts/*.py` buscando
+literales `get_config("...")`/`set_config("...")` y falla si el string
+no está en `CLAVES_CONOCIDAS` (salvo el prefijo `contador::`, reservado
+a `Storage.next_counter`). La tabla completa de claves — quién escribe
+cada una, quién la lee y en qué formato — vive en `docs/CONTRATOS.md`,
+sección "Claves de CONFIG"; no se repite aquí para no desincronizarse.
+
+**Hallazgo de datos vigente (documentado, no corregido en este cambio):**
+`views/ajustes.py` guarda el WhatsApp del negocio en la clave
+`negocio_whatsapp`, pero el recibo de venta (`views/vender.py:290`) lee
+`telefono_whatsapp` — una clave distinta, sembrada una sola vez por
+`scripts/seed_db.py` y que ninguna vista actualiza después. Si un admin
+cambia el WhatsApp desde Ajustes, el enlace del recibo sigue apuntando
+al número sembrado originalmente. Se mantiene documentado en
+`core/config_keys.py` y `docs/CONTRATOS.md` tal como el código se
+comporta hoy, no como "debería" comportarse.
+
+## Sistema de diseño (`core/ui.py` + `assets/theme.css` + fuentes autoalojadas)
+
+Tres capas, cada una con una responsabilidad distinta:
+
+1. **Tema nativo de Streamlit** (`.streamlit/config.toml`, sección
+   `[theme]`): paleta de marca fija (primario `#C2185B`, fondo
+   `#FDEFF0`, barra lateral `#FCE8EC`, etc. — ver `CLAUDE.md` §8),
+   radios, tamaño de fuente base, y color de encabezado de tablas. Todo
+   lo que el tema nativo ya resuelve **no** se repite en CSS.
+2. **`assets/theme.css`** (único archivo CSS del proyecto, inyectado por
+   `core.ui.inyectar_identidad_visual()` como un `<style>` embebido, de
+   forma idempotente por rerun vía
+   `reiniciar_identidad_visual_para_este_rerun()`): solo usa selectores
+   estables — `[data-testid="..."]`, clases propias `ot-*`, y
+   `[class*="st-key-ot-..."]` (la clase documentada que Streamlit agrega
+   a un `st.container(key="ot-...")`) — **nunca** clases autogeneradas
+   `.st-emotion-cache-*`, que se rompen entre versiones de Streamlit
+   (`tests/test_no_emotion_cache.py` falla si aparece ese patrón en
+   cualquier archivo del repo).
+3. **`core/ui.py`** (`TOKENS`, única fuente de verdad en Python de la
+   paleta/tipografía/escala, usada por los chips, la plantilla de
+   Plotly y el CSS inyectado) expone componentes de presentación pura
+   — `card`, `hero`, `encabezado_pagina`, `titulo_seccion`,
+   `tarjeta_kpi`/`kpi_card`, `chip_estado`, `estado_vacio`,
+   `pie_pagina` — sin ningún cálculo de negocio. Ningún emoji en la UI
+   (§9 del encargo): los iconos son Material Symbols Outlined
+   autoalojados, referenciados como `:material/nombre:` (soporte nativo
+   de `st.button`/`st.tabs` desde Streamlit ≥1.36).
+
+Tipografía y los iconos Material se sirven como archivos estáticos
+reales bajo `assets/fonts/*.woff2` vía `theme.fontFaces` en
+`config.toml` (requiere `server.enableStaticServing = true`): Inter
+(400/500/600/700), Playfair Display (600, títulos) y Great Vibes (400,
+la firma de marca), más `material-symbols-outlined.woff2` para los
+iconos. El logo (`assets/brand/`) se genera de forma reproducible con
+`scripts/build_logo_assets.py` a partir de un único JPEG de origen:
+recorte circular antialiased con máscara, favicon multi-resolución
+(`.ico` + PNG), apple-touch-icon sobre el fondo de marca, y una versión
+monocromática para impresión térmica de recibos/etiquetas.

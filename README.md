@@ -89,6 +89,9 @@ sincronización real, copia `.streamlit/secrets.toml.example` a
 ## Probar
 
 ```bash
+# Pruebas rápidas (sin medir cobertura)
+pytest -q
+
 # Pruebas + cobertura de core/ (igual que en CI, bloqueante en >=85%)
 pytest tests/ --cov=core --cov-report=term-missing --cov-fail-under=85
 
@@ -116,13 +119,32 @@ DEMO=1 python scripts/seed_demo.py --dias 90 --ventas-por-dia 40
 
 ## Repos relacionados
 
+Este proyecto vive en 3 repositorios separados, a propósito: el código
+nunca comparte repositorio con los datos reales del negocio.
+
+- `OlaTata-Inventory` — este repositorio. Todo el código de la app
+  (`app.py`, `views/`, `core/`, `tests/`, `scripts/`). No contiene datos
+  de clientes ni secretos: `*.xlsx`, `demo/` y `.streamlit/secrets.toml`
+  están en `.gitignore` (ver `DEPLOY.md` para el detalle de por qué esto
+  permite, si se quisiera, que este repo sea público).
 - `OlaTata-Database` — base viva (mes en curso), privado, sin código.
-- `OlaTata-Archive` — archivo inmutable de meses cerrados, privado, sin código.
+  Solo contiene `OLATATA_DB.xlsx`, publicado por `core/storage.py` al
+  cerrar cada `transaction()`. Su historial de commits de git es, en la
+  práctica, el historial de versiones del libro vivo (ver "Restaurar una
+  versión anterior" en `DEPLOY.md`).
+- `OlaTata-Archive` — archivo inmutable de meses cerrados, privado, sin
+  código. Un archivo `cierres/AAAA-MM.xlsx` por cada mes cerrado (ver
+  `core/monthly_close.py` y `docs/ARQUITECTURA.md`), más
+  `cierres/INDEX.json` con el resumen de todos los cierres publicados.
 
 ## Documentación
 
 - `DEPLOY.md` — despliegue en Streamlit Community Cloud y configuración
   del token de GitHub.
-- `MANUAL_USUARIO.md` — guía corta por rol (Dueño/a, Vendedor/a).
-- `docs/ARQUITECTURA.md` — esquema de datos y flujo del cierre mensual.
+- `MANUAL_USUARIO.md` — guía corta por rol (Dueño/a, Vendedor/a), con
+  capturas de pantalla reales.
+- `docs/ARQUITECTURA.md` — esquema de datos, sincronización con GitHub,
+  permisos, sistema de diseño y flujo del cierre mensual.
 - `docs/CONTRATOS.md` — API congelada de los módulos base de `core/`.
+- `CHANGELOG.md` — historial de hitos del proyecto, reconstruido a
+  partir de `git log`.

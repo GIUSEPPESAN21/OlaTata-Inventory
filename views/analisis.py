@@ -82,7 +82,10 @@ def _grafica_barras(barras: list[dict], titulo: str) -> go.Figure:
             textposition="outside",
         )
     )
-    fig.update_layout(title=titulo, yaxis_tickprefix="$", yaxis_tickformat=",.0f", showlegend=False)
+    # `titulo` no se pasa a `fig.update_layout` (hallazgo de V4): el
+    # encabezado de sección (`titulo_seccion`) ya lo muestra arriba de la
+    # tarjeta — repetirlo dentro del propio gráfico era redundante.
+    fig.update_layout(yaxis_tickprefix="$", yaxis_tickformat=",.0f", showlegend=False)
     return fig
 
 
@@ -99,10 +102,43 @@ def _grafica_top(registros: list[dict], campo_y: str, etiqueta: str, titulo: str
             textposition="outside",
         )
     )
-    fig.update_layout(title=titulo, showlegend=False)
+    fig.update_layout(showlegend=False)
     if etiqueta == "dinero":
         fig.update_layout(yaxis_tickprefix="$", yaxis_tickformat=",.0f")
     return fig
+
+
+# --------------------------------------------------- estados vacíos (V4)
+# Hallazgo de V4 (revisor UX, marcado como bloqueante para producción):
+# sin ventas, `st.dataframe`/`st.plotly_chart` pintan su placeholder
+# nativo ("empty" en inglés, o un lienzo completamente en blanco) en vez
+# de un estado vacío propio — exactamente el escenario de un negocio
+# nuevo el día 1. Estos envoltorios reemplazan esos casos por
+# `core.ui.estado_vacio()`, sin tocar `core.analytics` (los datos siguen
+# siendo los mismos; solo cambia qué se pinta cuando están vacíos).
+def _dataframe_o_vacio(registros: list[dict], key: str, mensaje: str) -> None:
+    if not registros:
+        estado_vacio(mensaje, icono="bar_chart")
+        return
+    st.dataframe(pd.DataFrame(registros), use_container_width=True, hide_index=True, key=key)
+
+
+def _grafica_top_o_vacio(registros: list[dict], campo_y: str, etiqueta: str, titulo: str, key: str, mensaje: str) -> None:
+    if not registros:
+        estado_vacio(mensaje, icono="bar_chart")
+        return
+    st.plotly_chart(_grafica_top(registros, campo_y, etiqueta, titulo), use_container_width=True, key=key)
+
+
+def _hay_movimiento(barras: list[dict], campo: str = "ventas_netas") -> bool:
+    return any(int(b.get(campo, 0) or 0) != 0 for b in barras)
+
+
+def _grafica_barras_o_vacio(barras: list[dict], titulo: str, key: str, mensaje: str) -> None:
+    if not _hay_movimiento(barras):
+        estado_vacio(mensaje, icono="bar_chart")
+        return
+    st.plotly_chart(_grafica_barras(barras, titulo), use_container_width=True, key=key)
 
 
 def _boton_excel(ctx: ViewContext, tipo: str, fecha_local: date, rol: str, usuario_id: str | None) -> None:
@@ -136,37 +172,47 @@ def _render_hoy(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
 
     with card(acento="superior"):
         titulo_seccion("Ventas por hora", centrado=False)
-        df_horas = pd.DataFrame(kpis["ventas_por_hora"])
-        fig = go.Figure(go.Bar(x=df_horas["hora"], y=df_horas["total"], marker_color=_COLOR_PRIMARIO, text=[format_cop(v) for v in df_horas["total"]]))
-        fig.update_layout(yaxis_tickprefix="$", yaxis_tickformat=",.0f", showlegend=False)
-        st.plotly_chart(fig, use_container_width=True, key="hoy_ventas_por_hora")
+        ventas_por_hora = kpis["ventas_por_hora"]
+        if not _hay_movimiento(ventas_por_hora, campo="total"):
+            estado_vacio("Todavía no hay ventas hoy.", "Las ventas que registres van a aparecer aquí, hora por hora.", icono="bar_chart")
+        else:
+            df_horas = pd.DataFrame(ventas_por_hora)
+            fig = go.Figure(go.Bar(x=df_horas["hora"], y=df_horas["total"], marker_color=_COLOR_PRIMARIO, text=[format_cop(v) for v in df_horas["total"]]))
+            fig.update_layout(yaxis_tickprefix="$", yaxis_tickformat=",.0f", showlegend=False)
+            st.plotly_chart(fig, use_container_width=True, key="hoy_ventas_por_hora")
 
     with card(acento="superior"):
         titulo_seccion("Por método de pago", centrado=False)
-        st.dataframe(pd.DataFrame(kpis["por_metodo_pago"]), use_container_width=True, hide_index=True, key="hoy_por_metodo_pago")
+        _dataframe_o_vacio(kpis["por_metodo_pago"], "hoy_por_metodo_pago", "Todavía no hay pagos registrados hoy.")
         st.metric("Flujo de caja (sin 'Cambio')", format_cop(kpis["flujo_caja"]))
 
     colc, cold = st.columns(2)
     with colc:
         with card(acento="superior"):
             titulo_seccion("Por canal", centrado=False)
-            st.dataframe(pd.DataFrame(kpis["por_canal"]), use_container_width=True, hide_index=True, key="hoy_por_canal")
+            _dataframe_o_vacio(kpis["por_canal"], "hoy_por_canal", "Todavía no hay ventas por canal hoy.")
     with cold:
         with card(acento="superior"):
             titulo_seccion("Por categoría", centrado=False)
-            st.dataframe(pd.DataFrame(kpis["por_categoria"]), use_container_width=True, hide_index=True, key="hoy_por_categoria")
+            _dataframe_o_vacio(kpis["por_categoria"], "hoy_por_categoria", "Todavía no hay ventas por categoría hoy.")
 
     with card(acento="superior"):
         titulo_seccion("Top 10 por unidades", centrado=False)
-        st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades"), use_container_width=True, key="hoy_top_unidades")
+        _grafica_top_o_vacio(
+            kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades",
+            "hoy_top_unidades", "Todavía no hay productos vendidos hoy.",
+        )
     if tiene_completo and kpis.get("por_ganancia"):
         with card(acento="superior"):
             titulo_seccion("Top 10 por ganancia", centrado=False)
-            st.plotly_chart(_grafica_top(kpis["por_ganancia"], "ganancia", "dinero", "Top 10 por ganancia"), use_container_width=True, key="hoy_top_ganancia")
+            _grafica_top_o_vacio(
+                kpis["por_ganancia"], "ganancia", "dinero", "Top 10 por ganancia",
+                "hoy_top_ganancia", "Todavía no hay ganancia registrada hoy.",
+            )
 
     with card(acento="superior"):
         titulo_seccion("Ventas del día", centrado=False)
-        st.dataframe(pd.DataFrame(kpis["ventas_del_dia"]), use_container_width=True, hide_index=True, key="hoy_ventas_del_dia")
+        _dataframe_o_vacio(kpis["ventas_del_dia"], "hoy_ventas_del_dia", "Todavía no se ha registrado ninguna venta hoy.")
 
     if tiene_capacidad(rol, "cuadre_caja"):
         with card(acento="izquierdo"):
@@ -208,7 +254,10 @@ def _render_semana(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str 
 
     with card(acento="superior"):
         titulo_seccion("Ventas netas por día (lunes → hoy)", centrado=False)
-        st.plotly_chart(_grafica_barras(kpis["barras_por_dia"], "Ventas netas por día (lunes → hoy)"), use_container_width=True, key="semana_barras_por_dia")
+        _grafica_barras_o_vacio(
+            kpis["barras_por_dia"], "Ventas netas por día (lunes → hoy)",
+            "semana_barras_por_dia", "Todavía no hay ventas esta semana.",
+        )
 
     kpi_card(
         "vs. semana anterior (mismos días transcurridos)", format_cop(kpis["comparativo_semana_anterior"]["actual"]),
@@ -217,7 +266,10 @@ def _render_semana(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str 
 
     with card(acento="superior"):
         titulo_seccion("Top productos de la semana", centrado=False)
-        st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top por unidades"), use_container_width=True, key="semana_top_unidades")
+        _grafica_top_o_vacio(
+            kpis["por_unidades"], "cantidad", "unidades", "Top por unidades",
+            "semana_top_unidades", "Todavía no hay productos vendidos esta semana.",
+        )
 
     _boton_excel(ctx, "semana", hoy_local, rol, usuario_id)
 
@@ -228,25 +280,34 @@ def _render_mes(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
 
     with card(acento="superior"):
         titulo_seccion("Ventas netas por día (día 1 → hoy)", centrado=False)
-        st.plotly_chart(_grafica_barras(kpis["barras_por_dia"], "Ventas netas por día (día 1 → hoy)"), use_container_width=True, key="mes_barras_por_dia")
+        _grafica_barras_o_vacio(
+            kpis["barras_por_dia"], "Ventas netas por día (día 1 → hoy)",
+            "mes_barras_por_dia", "Todavía no hay ventas este mes.",
+        )
 
     colc, cold = st.columns(2)
     with colc:
         with card(acento="superior"):
             titulo_seccion("Por categoría", centrado=False)
-            st.dataframe(pd.DataFrame(kpis["por_categoria"]), use_container_width=True, hide_index=True, key="mes_por_categoria")
+            _dataframe_o_vacio(kpis["por_categoria"], "mes_por_categoria", "Todavía no hay ventas por categoría este mes.")
     with cold:
         with card(acento="superior"):
             titulo_seccion("Por canal", centrado=False)
-            st.dataframe(pd.DataFrame(kpis["por_canal"]), use_container_width=True, hide_index=True, key="mes_por_canal")
+            _dataframe_o_vacio(kpis["por_canal"], "mes_por_canal", "Todavía no hay ventas por canal este mes.")
 
     with card(acento="superior"):
         titulo_seccion("Top 10 por unidades", centrado=False)
-        st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades"), use_container_width=True, key="mes_top_unidades")
+        _grafica_top_o_vacio(
+            kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades",
+            "mes_top_unidades", "Todavía no hay productos vendidos este mes.",
+        )
     if tiene_completo and kpis.get("por_ganancia"):
         with card(acento="superior"):
             titulo_seccion("Top 10 por ganancia", centrado=False)
-            st.plotly_chart(_grafica_top(kpis["por_ganancia"], "ganancia", "dinero", "Top 10 por ganancia"), use_container_width=True, key="mes_top_ganancia")
+            _grafica_top_o_vacio(
+                kpis["por_ganancia"], "ganancia", "dinero", "Top 10 por ganancia",
+                "mes_top_ganancia", "Todavía no hay ganancia registrada este mes.",
+            )
 
     kpi_card(
         "vs. mes anterior (mismo día transcurrido)", format_cop(kpis["comparativo_mes_anterior"]["actual"]),
@@ -267,7 +328,10 @@ def _render_mes(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
 
     with card(acento="superior"):
         titulo_seccion("Stock sin ventas en 30 días", centrado=False)
-        st.dataframe(pd.DataFrame(kpis["stock_sin_ventas_30_dias"]), use_container_width=True, hide_index=True, key="mes_stock_sin_ventas")
+        _dataframe_o_vacio(
+            kpis["stock_sin_ventas_30_dias"], "mes_stock_sin_ventas",
+            "Todo el stock tuvo ventas en los últimos 30 días.",
+        )
 
     _boton_excel(ctx, "mes", hoy_local, rol, usuario_id)
 
@@ -303,4 +367,7 @@ def _render_meses_anteriores(ctx: ViewContext, hoy_local: date, rol: str) -> Non
     _kpi_row(kpis, tiene_completo)
     with card(acento="superior"):
         titulo_seccion("Top 10 por unidades", centrado=False)
-        st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades"), use_container_width=True, key="anteriores_top_unidades")
+        _grafica_top_o_vacio(
+            kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades",
+            "anteriores_top_unidades", f"No hay productos vendidos archivados para {seleccion}.",
+        )
