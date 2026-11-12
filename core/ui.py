@@ -20,10 +20,12 @@ importable en pruebas sin que Streamlit esté corriendo.
 """
 from __future__ import annotations
 
+import itertools
 import logging
 import secrets
 import string
 import uuid
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -36,6 +38,7 @@ logger = logging.getLogger("olatata.ui")
 __all__ = [
     "PASSWORD_MIN_LENGTH",
     "TOKENS",
+    "ICONOS_VISTA",
     "validar_password",
     "generar_password_temporal",
     "generar_codigo_incidente",
@@ -46,16 +49,41 @@ __all__ = [
     "confirmacion_coincide",
     "tarjeta_kpi",
     "tarjeta_kpi_pesos",
+    "kpi_card",
     "estado_vacio",
+    "empty_state",
     "pie_pagina",
     "inyectar_identidad_visual",
+    "reiniciar_identidad_visual_para_este_rerun",
+    "page_background",
+    "brand_rings_svg",
+    "brand_rings",
     "encabezado_pagina",
+    "hero",
+    "titulo_seccion",
+    "card",
     "chip_estado",
+    "chip",
+    "icono_md",
     "render_logo",
     "logo_path",
     "plantilla_plotly_olatata",
     "registrar_tema_plotly",
 ]
+
+# Iconos Material Symbols (§9: sin emojis en la UI) para cada vista del
+# menú lateral. `views/__init__.py` es contrato congelado (trae un emoji
+# en `icon`, pensado para el encargo original) — en vez de tocarlo, A5
+# mapea aquí la MISMA clave `vista["key"]` a un icono Material, y
+# `app.py` usa este diccionario en vez de `vista["icon"]` al construir la
+# navegación lateral (ver informe final de A5 sobre este hallazgo)."""
+ICONOS_VISTA = {
+    "vender": "shopping_bag",
+    "ventas": "receipt_long",
+    "inventario": "inventory_2",
+    "analisis": "bar_chart",
+    "ajustes": "settings",
+}
 
 PASSWORD_MIN_LENGTH = 8
 _ALFABETO_PASSWORD_TEMPORAL = string.ascii_letters + string.digits
@@ -197,22 +225,174 @@ def tarjeta_kpi_pesos(etiqueta: str, valor_pesos: int, delta: str | None = None)
     tarjeta_kpi(etiqueta, format_cop(valor_pesos), delta)
 
 
-def estado_vacio(mensaje: str, sugerencia: str | None = None) -> None:
-    """Estado vacío que explica qué hacer (§6), nunca una pantalla en blanco."""
+def icono_md(nombre: str, *, tamano_px: int = 20, color: str | None = None) -> str:
+    """HTML de un icono Material Symbols autoalojado (§9: sin emojis),
+    listo para incrustar en cualquier bloque propio con
+    `unsafe_allow_html=True`. Para widgets NATIVOS de Streamlit (botones,
+    markdown de texto) se prefiere el atajo incorporado `:material/nombre:`
+    en vez de esta función — `icono_md` es solo para el marcado propio
+    (tarjetas, chips, encabezados) donde se escribe el HTML a mano."""
+    estilo = f"font-size:{tamano_px}px;line-height:1;"
+    if color:
+        estilo += f"color:{color};"
+    return f'<span class="material-symbols-outlined" style="{estilo}">{nombre}</span>'
+
+
+def estado_vacio(mensaje: str, sugerencia: str | None = None, *, icono: str = "search_off") -> None:
+    """Estado vacío premium (§6/D-todas): tarjeta con el motivo de aros muy
+    tenue detrás de un icono, mensaje cálido y sugerencia opcional —
+    nunca una pantalla en blanco ni un `st.info` plano. Mismo contrato de
+    llamada que la versión anterior (mensaje + sugerencia opcionales),
+    así ninguna vista que ya la use necesita cambiar su llamada."""
     import streamlit as st
 
-    texto = mensaje if not sugerencia else f"{mensaje}\n\n{sugerencia}"
-    st.info(texto)
+    inyectar_identidad_visual()
+    sugerencia_html = f'<p class="ot-estado-vacio__sugerencia">{sugerencia}</p>' if sugerencia else ""
+    with card(acento="ninguno"):
+        st.markdown(
+            f"""
+            <div class="ot-estado-vacio">
+                <div class="ot-estado-vacio__motivo">{brand_rings_svg(96)}</div>
+                <div class="ot-estado-vacio__icono">{icono_md(icono, tamano_px=28)}</div>
+                <p class="ot-estado-vacio__mensaje">{mensaje}</p>
+                {sugerencia_html}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+# `empty_state` es el nombre que pide el encargo de rediseño visual (§6
+# del informe de A5); `estado_vacio` es el nombre histórico que ya usan
+# `views/ajustes.py` y otras vistas — ambos apuntan a la misma función.
+empty_state = estado_vacio
 
 
 def pie_pagina() -> None:
     import streamlit as st
 
-    st.markdown(
-        "<div style='text-align:center;color:#6B4A57;font-size:0.85rem;"
-        "padding-top:1rem;'>Desarrollado por SAVA</div>",
-        unsafe_allow_html=True,
+    inyectar_identidad_visual()
+    st.markdown('<div class="ot-pie-pagina">Desarrollado por SAVA</div>', unsafe_allow_html=True)
+
+
+# --------------------------------------------------------- fondo / motivo
+def page_background() -> None:
+    """El fondo de mármol rosa (base + manchas radiales sutiles, D1) es
+    una regla GLOBAL de `assets/theme.css` sobre `html body` — se aplica
+    sola en cuanto el CSS está inyectado. Esta función solo existe para
+    que una pantalla que no pasa por `encabezado_pagina`/`encabezado_marca`
+    (y por lo tanto no inyectaría el CSS todavía) pueda garantizarlo
+    explícitamente llamándola una vez al inicio de su `render(ctx)`."""
+    inyectar_identidad_visual()
+
+
+def brand_rings_svg(tamano_px: int = 260) -> str:
+    """SVG inline de aros dorados concéntricos (D2): el motivo de marca
+    derivado del logo (trazo con degradado bronce -> brillo, sin relleno,
+    opacidad 0.35-0.6). Nunca se repite más de una vez por pantalla con
+    fuerza — se usa muy tenue detrás del logo (login) o de un icono de
+    estado vacío. Devuelve el marcado listo para `st.markdown(...,
+    unsafe_allow_html=True)`; no es una imagen, así que escala nítido a
+    cualquier tamaño."""
+    colores = TOKENS["color"]
+    return (
+        f'<svg class="ot-aros" width="{tamano_px}" height="{tamano_px}" '
+        f'viewBox="0 0 200 200" aria-hidden="true" focusable="false">'
+        f"<defs><linearGradient id=\"ot-aro-degradado\" x1=\"0%\" y1=\"0%\" x2=\"100%\" y2=\"100%\">"
+        f"<stop offset=\"0%\" stop-color=\"{colores['dorado_bronce']}\"/>"
+        f"<stop offset=\"100%\" stop-color=\"{colores['dorado_brillo']}\"/>"
+        f"</linearGradient></defs>"
+        f'<circle cx="100" cy="100" r="94" fill="none" stroke="url(#ot-aro-degradado)" stroke-width="1.5" opacity="0.4"/>'
+        f'<circle cx="100" cy="100" r="86" fill="none" stroke="url(#ot-aro-degradado)" stroke-width="1" opacity="0.55"/>'
+        f'<circle cx="100" cy="100" r="78" fill="none" stroke="url(#ot-aro-degradado)" stroke-width="2" opacity="0.3"/>'
+        f"</svg>"
     )
+
+
+def brand_rings(tamano_px: int = 260) -> None:
+    """Pinta `brand_rings_svg` dentro de un wrapper posicionado
+    (`.ot-aros-wrap`, ver `assets/theme.css`) listo para superponer otro
+    elemento encima (logo, icono) con `position: relative` + z-index."""
+    import streamlit as st
+
+    st.markdown(f'<div class="ot-aros-wrap">{brand_rings_svg(tamano_px)}</div>', unsafe_allow_html=True)
+
+
+# ------------------------------------------------------------------ tarjeta
+_contador_tarjetas = itertools.count()
+
+
+@contextmanager
+def card(*, acento: str = "superior", key: str | None = None):
+    """Tarjeta de marca (D-todas): borde rosa 1px, fondo blanco, radio
+    16px, sombra en dos capas, filete dorado de 3px. `acento` en
+    {"superior" (por defecto), "izquierdo", "ninguno"}.
+
+    Implementado sobre `st.container(border=True, key=...)`: Streamlit
+    añade la clase ESTABLE y DOCUMENTADA `st-key-<key>` al bloque (no es
+    una clase autogenerada `.st-emotion-cache-*`, §9) — `assets/theme.css`
+    la usa vía `[class*="st-key-ot-card-"]` para pintar el resto del
+    look. El `key` se genera automáticamente (único por llamada dentro de
+    un mismo rerun) salvo que la vista necesite uno estable propio."""
+    import streamlit as st
+
+    inyectar_identidad_visual()
+    if key is None:
+        key = f"ot-card-{acento}-{next(_contador_tarjetas)}"
+    with st.container(border=True, key=key):
+        yield
+
+
+# ---------------------------------------------------------------- KPI card
+def kpi_card(etiqueta: str, valor_formateado: str, *, delta: str | None = None, icono: str = "insights") -> None:
+    """Tarjeta KPI grande y centrada (D-análisis): icono en círculo
+    rosado, cifra 44-52px Inter 700 tabular, etiqueta 13px mayúscula con
+    tracking, variación con flecha (sube/baja/neutro) + texto.
+
+    `valor_formateado` ya debe venir de `core.money.format_cop` cuando sea
+    dinero (R1) — esta función solo PINTA, nunca calcula. `delta`, si se
+    da, también debe venir ya formateado por quien llama (p.ej.
+    `core.money.format_percent`); aquí solo se mira el primer caracter
+    ('+'/'-') del texto para decidir el icono de flecha, sin recalcular
+    ningún número de negocio."""
+    import streamlit as st
+
+    delta_html = ""
+    if delta:
+        texto_delta = str(delta).strip()
+        if texto_delta.startswith("-"):
+            flecha, clase = "trending_down", "ot-kpi__delta--baja"
+        elif texto_delta.startswith("+"):
+            flecha, clase = "trending_up", "ot-kpi__delta--sube"
+        else:
+            flecha, clase = "trending_flat", "ot-kpi__delta--neutro"
+        delta_html = (
+            f'<div class="ot-kpi__delta {clase}">{icono_md(flecha, tamano_px=16)}{texto_delta}</div>'
+        )
+
+    with card(acento="superior"):
+        st.markdown(
+            f"""
+            <div class="ot-kpi">
+                <div class="ot-kpi__icono">{icono_md(icono, tamano_px=24)}</div>
+                <div class="ot-kpi__valor">{valor_formateado}</div>
+                <div class="ot-kpi__etiqueta">{etiqueta}</div>
+                {delta_html}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+def titulo_seccion(texto: str, *, centrado: bool = True) -> None:
+    """Subtítulo de sección (H2, D-todas): Playfair Display 600, 30-32px.
+    Reemplaza los `st.subheader`/`st.markdown("### ...")` sueltos para que
+    toda la app comparta el mismo tratamiento tipográfico de sección."""
+    import streamlit as st
+
+    inyectar_identidad_visual()
+    clase = "ot-titulo-seccion" + ("" if centrado else " ot-titulo-seccion--izquierda")
+    st.markdown(f'<h2 class="{clase}">{texto}</h2>', unsafe_allow_html=True)
 
 
 def _repo_root() -> Path:
@@ -235,15 +415,24 @@ def inyectar_identidad_visual() -> None:
     selectores ESTABLES (`html`, `body`, `data-testid`) — nunca clases
     autogeneradas `.st-emotion-cache-*` (§9: esa es la falla real que se
     encontró en el repo de referencia Rapi Tienda). Las fuentes
-    (Inter/Playfair Display/Great Vibes) se autoalojan vía
-    `[[theme.fontFaces]]` en `.streamlit/config.toml` — este módulo solo
-    aplica el resto del sistema de diseño (chips, tarjetas KPI, foco,
-    reduced-motion, etc.).
+    (Inter/Playfair Display/Great Vibes/Material Symbols) se autoalojan
+    vía `[[theme.fontFaces]]` en `.streamlit/config.toml` — este módulo
+    solo aplica el resto del sistema de diseño (tarjetas, KPI, chips,
+    foco, reduced-motion, etc.).
 
-    Idempotente dentro de una misma sesión de Streamlit: el CSS solo se
-    reinyecta una vez por rerun para no duplicar el bloque `<style>`."""
+    Idempotente DENTRO DE UN MISMO RERUN (ahora casi todos los
+    componentes de `core.ui` la llaman al pintar, así que sin esta guarda
+    una sola pantalla duplicaría el bloque `<style>` muchas veces): usa
+    una bandera en `st.session_state` que `app.py` reinicia al principio
+    de cada `main()` con `reiniciar_identidad_visual_para_este_rerun()` —
+    por eso la bandera vive en `session_state` (persiste entre reruns)
+    pero se borra explícitamente al empezar uno nuevo, nunca se queda en
+    `True` para siempre (eso dejaría la segunda pantalla sin estilos)."""
     import streamlit as st
 
+    if st.session_state.get(_IDENTIDAD_VISUAL_INYECTADA_KEY):
+        return
+    st.session_state[_IDENTIDAD_VISUAL_INYECTADA_KEY] = True
     try:
         css = (_repo_root() / "assets" / "theme.css").read_text(encoding="utf-8")
     except OSError:
@@ -252,22 +441,37 @@ def inyectar_identidad_visual() -> None:
         st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 
-def encabezado_marca(nombre_negocio: str = "Ola Tata", *, contexto: str = "pantalla") -> None:
-    """Cabecera de marca: logo circular + nombre en Great Vibes (A3/D1/D2).
+def reiniciar_identidad_visual_para_este_rerun() -> None:
+    """Llamada EXCLUSIVA de `app.py` (única propiedad de A5) al principio
+    de `main()`, antes de enrutar a cualquier pantalla: borra la bandera
+    de `inyectar_identidad_visual()` para que ese rerun vuelva a pintar el
+    `<style>` una vez (el DOM anterior ya no existe), sin volver a
+    duplicarlo dentro del mismo rerun."""
+    import streamlit as st
+
+    st.session_state.pop(_IDENTIDAD_VISUAL_INYECTADA_KEY, None)
+
+
+def encabezado_marca(
+    nombre_negocio: str = "Ola Tata", *, contexto: str = "pantalla", subtitulo: str | None = None
+) -> None:
+    """Cabecera de marca: logo circular + nombre en Great Vibes, con los
+    aros dorados de marca detrás (A3/D1/D2).
 
     `contexto="pantalla"` (por defecto, usado por login y primer
-    arranque): logo grande (180 px) centrado, pensado para una tarjeta
-    central.
-    `contexto="sidebar"`: avatar pequeño (72 px) + nombre en script al
-    lado (A3: el texto de marca va en texto vivo, nunca dentro de la
-    imagen) — pensado para la barra lateral.
+    arranque): logo grande (220 px) centrado con los aros detrás, nombre
+    en script 64px debajo y `subtitulo` opcional (Inter, texto
+    secundario) — pensado para la pantalla completa de acceso.
+    `contexto="sidebar"`: logo 120px centrado + nombre en script 34px
+    debajo, apilados verticalmente (A3: el texto de marca va en texto
+    vivo, nunca dentro de la imagen) — pensado para la barra lateral.
 
     Si el logo aún no se generó (`scripts/build_logo_assets.py` no
     corrió en este entorno) se degrada a solo texto, sin tronar."""
     import streamlit as st
 
     inyectar_identidad_visual()
-    ruta_logo = logo_path("olatata-logo.png") if contexto == "sidebar" else logo_path("olatata-logo-256.png")
+    ruta_logo = logo_path("olatata-logo-128.png") if contexto == "sidebar" else logo_path("olatata-logo-256.png")
 
     if contexto == "sidebar":
         if ruta_logo:
@@ -277,8 +481,9 @@ def encabezado_marca(nombre_negocio: str = "Ola Tata", *, contexto: str = "panta
             st.markdown(
                 f"""
                 <div class="ot-avatar-sidebar">
+                    <div class="ot-aros-wrap ot-aros-wrap--sidebar">{brand_rings_svg(130)}</div>
                     <img src="data:image/png;base64,{b64}" alt="Logo de {nombre_negocio}">
-                    <span class="ot-marca-script">{nombre_negocio}</span>
+                    <span class="ot-marca-script ot-marca-script--sidebar">{nombre_negocio}</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -287,12 +492,16 @@ def encabezado_marca(nombre_negocio: str = "Ola Tata", *, contexto: str = "panta
             st.markdown(f"<div class='ot-marca-script'>{nombre_negocio}</div>", unsafe_allow_html=True)
         return
 
+    subtitulo_html = f'<p class="ot-hero-logo__subtitulo">{subtitulo}</p>' if subtitulo else ""
+
     if ruta_logo:
-        col_izq, col_centro, col_der = st.columns([1, 2, 1])
-        with col_centro:
-            st.image(ruta_logo, width=180, caption=None)
+        with st.container(key="ot-hero-logo"):
+            st.markdown(f'<div class="ot-aros-wrap">{brand_rings_svg(260)}</div>', unsafe_allow_html=True)
+            col_izq, col_centro, col_der = st.columns([1, 2, 1])
+            with col_centro:
+                st.image(ruta_logo, width=220, caption=None)
     st.markdown(
-        f"<div class='ot-marca-script' style='text-align:center'>{nombre_negocio}</div>",
+        f"<div class='ot-marca-script ot-marca-script--hero'>{nombre_negocio}</div>{subtitulo_html}",
         unsafe_allow_html=True,
     )
 
@@ -312,27 +521,44 @@ def render_logo(tamano_px: int = 72, *, nombre_archivo: str = "olatata-logo.png"
     st.image(ruta, width=tamano_px)
 
 
-def encabezado_pagina(titulo: str, subtitulo: str | None = None) -> None:
-    """Encabezado de página (C5/D-todas): título en Playfair Display +
-    subtítulo gris + filete dorado fino debajo. Sin acción principal
-    embebida aquí a propósito: cada vista decide dónde poner su botón
-    (p.ej. a la derecha con `st.columns`), este helper solo pinta el
-    título/subtítulo/filete de forma consistente."""
+def encabezado_pagina(titulo: str, subtitulo: str | None = None, *, icono: str | None = None) -> None:
+    """Encabezado de página — bloque "hero" centrado (C5/D-todas): título
+    en script de marca (Great Vibes, 56px escritorio / 40px celular vía
+    `assets/theme.css`, solo apto porque el título de cada pantalla es
+    una sola palabra -- "Vender"/"Inventario"/"Análisis"/"Ajustes" --
+    dentro del límite de 4 palabras para usar la tipografía de guion),
+    subtítulo Inter centrado y filete dorado centrado de 96px debajo.
+    `icono`, si se da, pinta un círculo rosado con el icono Material
+    encima del título (D-inventario/análisis/ajustes).
+
+    Sin acción principal embebida aquí a propósito: cada vista decide
+    dónde poner su botón (p.ej. a la derecha con `st.columns`), este
+    helper solo pinta el título/subtítulo/filete de forma consistente."""
     import streamlit as st
 
     inyectar_identidad_visual()
     subtitulo_html = (
         f"<p class='ot-encabezado-pagina__subtitulo'>{subtitulo}</p>" if subtitulo else ""
     )
+    icono_html = (
+        f'<div class="ot-encabezado-pagina__icono">{icono_md(icono, tamano_px=28)}</div>' if icono else ""
+    )
     st.markdown(
         f"""
         <div class="ot-encabezado-pagina">
+            {icono_html}
             <h1 class="ot-encabezado-pagina__titulo">{titulo}</h1>
             {subtitulo_html}
+            <div class="ot-encabezado-pagina__filete"></div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+
+# `hero` es el nombre del encargo de rediseño visual; `encabezado_pagina`
+# es el nombre histórico que ya usa `views/ajustes.py` — misma función.
+hero = encabezado_pagina
 
 
 _CHIP_ICONOS = {
@@ -359,6 +585,11 @@ def chip_estado(texto: str, tipo: str = "info", *, icono: str | None = None) -> 
         f'<span class="material-symbols-outlined" style="font-size:1rem">{nombre_icono}</span>'
         f"{texto}</span>"
     )
+
+
+# `chip` es el nombre del encargo de rediseño visual; `chip_estado` es el
+# nombre histórico que ya usan `views/ajustes.py` e `views/inventario.py`.
+chip = chip_estado
 
 
 def plantilla_plotly_olatata() -> Any:

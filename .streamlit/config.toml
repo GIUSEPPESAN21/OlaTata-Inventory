@@ -7,14 +7,14 @@ textColor = "#2B1B22"
 linkColor = "#C2185B"
 font = "Inter"
 headingFont = "Playfair Display"
-baseFontSize = 17
-baseRadius = "12px"
-buttonRadius = "12px"
+baseFontSize = 18
+baseRadius = "16px"
+buttonRadius = "16px"
 showWidgetBorder = true
 dataframeHeaderBackgroundColor = "#C2185B"
 dataframeHeaderTextColor = "#FFFFFF"
-metricValueFontSize = "2.25rem"
-metricValueFontWeight = 600
+metricValueFontSize = "2.75rem"
+metricValueFontWeight = 700
 chartCategoricalColors = ["#C2185B", "#C09860", "#FC7DA9", "#7A5A1F", "#2B1B22"]
 
 # Fuentes autoalojadas (C2): servidas por Streamlit desde `static/fonts/`
@@ -55,6 +55,16 @@ style = "normal"
 [[theme.fontFaces]]
 family = "Great Vibes"
 url = "app/static/fonts/great-vibes-400.woff2"
+weight = "400"
+style = "normal"
+
+# Iconografía (sin emojis en la UI, §9): Material Symbols Outlined
+# autoalojado (descargado una vez de Google Fonts, igual trato que las
+# tipografías de marca) para los iconos `:material/nombre:`-style que usan
+# `core.ui.chip_estado`, `core.ui.icono_md` y la navegación lateral.
+[[theme.fontFaces]]
+family = "Material Symbols Outlined"
+url = "app/static/fonts/material-symbols-outlined.woff2"
 weight = "400"
 style = "normal"
 
