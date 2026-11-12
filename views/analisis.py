@@ -126,28 +126,28 @@ def _render_hoy(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
     df_horas = pd.DataFrame(kpis["ventas_por_hora"])
     fig = go.Figure(go.Bar(x=df_horas["hora"], y=df_horas["total"], marker_color=_COLOR_PRIMARIO, text=[format_cop(v) for v in df_horas["total"]]))
     fig.update_layout(yaxis_tickprefix="$", yaxis_tickformat=",.0f", showlegend=False)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key="hoy_ventas_por_hora")
 
     st.subheader("Por método de pago")
-    st.dataframe(pd.DataFrame(kpis["por_metodo_pago"]), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(kpis["por_metodo_pago"]), use_container_width=True, hide_index=True, key="hoy_por_metodo_pago")
     st.metric("Flujo de caja (sin 'Cambio')", format_cop(kpis["flujo_caja"]))
 
     colc, cold = st.columns(2)
     with colc:
         st.subheader("Por canal")
-        st.dataframe(pd.DataFrame(kpis["por_canal"]), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(kpis["por_canal"]), use_container_width=True, hide_index=True, key="hoy_por_canal")
     with cold:
         st.subheader("Por categoría")
-        st.dataframe(pd.DataFrame(kpis["por_categoria"]), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(kpis["por_categoria"]), use_container_width=True, hide_index=True, key="hoy_por_categoria")
 
     st.subheader("Top 10 por unidades")
-    st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades"), use_container_width=True)
+    st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades"), use_container_width=True, key="hoy_top_unidades")
     if tiene_completo and kpis.get("por_ganancia"):
         st.subheader("Top 10 por ganancia")
-        st.plotly_chart(_grafica_top(kpis["por_ganancia"], "ganancia", "dinero", "Top 10 por ganancia"), use_container_width=True)
+        st.plotly_chart(_grafica_top(kpis["por_ganancia"], "ganancia", "dinero", "Top 10 por ganancia"), use_container_width=True, key="hoy_top_ganancia")
 
     st.subheader("Ventas del día")
-    st.dataframe(pd.DataFrame(kpis["ventas_del_dia"]), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(kpis["ventas_del_dia"]), use_container_width=True, hide_index=True, key="hoy_ventas_del_dia")
 
     if tiene_capacidad(rol, "cuadre_caja"):
         st.subheader("Cuadre de caja")
@@ -183,7 +183,7 @@ def _render_semana(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str 
     kpis = kpis_semana(ctx.storage, hoy_local, rol, usuario_id=usuario_id)
     _kpi_row(kpis, tiene_completo)
 
-    st.plotly_chart(_grafica_barras(kpis["barras_por_dia"], "Ventas netas por día (lunes → hoy)"), use_container_width=True)
+    st.plotly_chart(_grafica_barras(kpis["barras_por_dia"], "Ventas netas por día (lunes → hoy)"), use_container_width=True, key="semana_barras_por_dia")
 
     st.metric(
         "vs. semana anterior (mismos días transcurridos)",
@@ -192,7 +192,7 @@ def _render_semana(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str 
     )
 
     st.subheader("Top productos de la semana")
-    st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top por unidades"), use_container_width=True)
+    st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top por unidades"), use_container_width=True, key="semana_top_unidades")
 
     _boton_excel(ctx, "semana", hoy_local, rol, usuario_id)
 
@@ -201,21 +201,21 @@ def _render_mes(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
     kpis = kpis_mes(ctx.storage, hoy_local, rol, usuario_id=usuario_id)
     _kpi_row(kpis, tiene_completo)
 
-    st.plotly_chart(_grafica_barras(kpis["barras_por_dia"], "Ventas netas por día (día 1 → hoy)"), use_container_width=True)
+    st.plotly_chart(_grafica_barras(kpis["barras_por_dia"], "Ventas netas por día (día 1 → hoy)"), use_container_width=True, key="mes_barras_por_dia")
 
     colc, cold = st.columns(2)
     with colc:
         st.subheader("Por categoría")
-        st.dataframe(pd.DataFrame(kpis["por_categoria"]), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(kpis["por_categoria"]), use_container_width=True, hide_index=True, key="mes_por_categoria")
     with cold:
         st.subheader("Por canal")
-        st.dataframe(pd.DataFrame(kpis["por_canal"]), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(kpis["por_canal"]), use_container_width=True, hide_index=True, key="mes_por_canal")
 
     st.subheader("Top 10 por unidades")
-    st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades"), use_container_width=True)
+    st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades"), use_container_width=True, key="mes_top_unidades")
     if tiene_completo and kpis.get("por_ganancia"):
         st.subheader("Top 10 por ganancia")
-        st.plotly_chart(_grafica_top(kpis["por_ganancia"], "ganancia", "dinero", "Top 10 por ganancia"), use_container_width=True)
+        st.plotly_chart(_grafica_top(kpis["por_ganancia"], "ganancia", "dinero", "Top 10 por ganancia"), use_container_width=True, key="mes_top_ganancia")
 
     st.metric(
         "vs. mes anterior (mismo día transcurrido)",
@@ -235,7 +235,7 @@ def _render_mes(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
         colw.metric("Agotados", bajo["agotados"])
 
     st.subheader("Stock sin ventas en 30 días")
-    st.dataframe(pd.DataFrame(kpis["stock_sin_ventas_30_dias"]), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(kpis["stock_sin_ventas_30_dias"]), use_container_width=True, hide_index=True, key="mes_stock_sin_ventas")
 
     _boton_excel(ctx, "mes", hoy_local, rol, usuario_id)
 
@@ -270,4 +270,4 @@ def _render_meses_anteriores(ctx: ViewContext, hoy_local: date, rol: str) -> Non
     tiene_completo = tiene_capacidad(rol, "ver_analisis_completo")
     _kpi_row(kpis, tiene_completo)
     st.subheader("Top 10 por unidades")
-    st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades"), use_container_width=True)
+    st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades"), use_container_width=True, key="anteriores_top_unidades")
