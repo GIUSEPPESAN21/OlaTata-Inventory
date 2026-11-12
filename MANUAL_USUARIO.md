@@ -97,3 +97,28 @@ fechas), no las de otros vendedores ni las del Dueño/a.
 - No ves Inventario ni Análisis.
 - No puedes entrar a Ajustes (ni ver usuarios, ni cerrar el mes, ni
   descargar el respaldo). Si lo necesitas, pídeselo al Dueño/a.
+
+---
+
+## Capturas de pantalla (modo demo, datos 100% ficticios)
+
+Tomadas con Playwright contra la app real corriendo con `DEMO=1` (ver
+`docs/capturas/` para los archivos originales). Confirman que el
+sistema de diseño (logo circular sin halo, tipografía Playfair
+Display/Inter/Great Vibes autoalojada, paleta de marca, tarjetas KPI
+con borde dorado) se ve como se espera en pantalla ancha (1366x768) y
+en celular (390x844).
+
+| Pantalla | Escritorio | Celular |
+|---|---|---|
+| Login | `docs/capturas/01_login_desktop.png` | `docs/capturas/04_login_mobile.png` |
+| Vender (carrito vacío) | `docs/capturas/02_post_login_desktop.png` | `docs/capturas/05_post_login_mobile.png` |
+| Ventas | `docs/capturas/03_ventas_desktop.png` | — |
+| Inventario | `docs/capturas/03_inventario_desktop.png` | — |
+| Análisis — Hoy | `docs/capturas/03_analisis_desktop.png` | — |
+| Ajustes — Negocio | `docs/capturas/03_ajustes_desktop.png` | — |
+
+Nota honesta (ver informe final de A5): la pestaña **Mes** de Análisis
+lanzó un error amable (`docs/capturas/03_analisis_mes_desktop.png`)
+contra los datos de demostración generados — es un hallazgo sobre
+`views/analisis.py` (no es un archivo de A5), reportado al coordinador.

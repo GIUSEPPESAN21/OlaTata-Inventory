@@ -1,0 +1,164 @@
+/*
+ * Ola Tata · theme.css (A5 — SHELL/TEMA/AJUSTES)
+ *
+ * Único archivo CSS del proyecto (C7). Reglas duras:
+ * - SOLO selectores estables: `[data-testid="..."]`, `html`, `body`.
+ * - JAMÁS clases autogeneradas `.st-emotion-cache-*` (se rompen entre
+ *   versiones de Streamlit). `tests/test_no_emotion_cache.py` falla si
+ *   ese texto aparece en cualquier archivo del repo.
+ * - Todo lo que el tema nativo de `.streamlit/config.toml` ya resuelve
+ *   (colores, radios, tipografía base, color de encabezado de tablas,
+ *   tamaño/peso de st.metric) NO se repite aquí.
+ *
+ * Esto se inyecta una sola vez por `core.ui.inyectar_identidad_visual()`
+ * con un <link> a este archivo servido por Streamlit (requiere
+ * `server.enableStaticServing=true`, ver `.streamlit/config.toml`).
+ */
+
+:root {
+  --ot-primario: #C2185B;
+  --ot-rosa-marca: #FC7DA9;
+  --ot-rosa-veta: #F8C0D8;
+  --ot-fondo: #FDEFF0;
+  --ot-superficie: #FFFFFF;
+  --ot-sidebar: #FCE8EC;
+  --ot-dorado-bronce: #A07838;
+  --ot-dorado-brillo: #C09860;
+  --ot-dorado-texto: #7A5A1F;
+  --ot-tinta: #2B1B22;
+  --ot-texto-secundario: #6B4A57;
+  --ot-exito: #1E7E4F;
+  --ot-error: #B3261E;
+  --ot-alerta-texto: #8A5A00;
+  --ot-alerta-fondo: #FFF4D6;
+  --ot-radio: 12px;
+  --ot-sombra: 0 2px 8px rgba(43, 27, 34, 0.06);
+}
+
+/* Respeta "prefers-reduced-motion": animaciones/transiciones <=200ms (C8) */
+* {
+  transition-duration: 150ms !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Ancho máximo de contenido ~1200px (C3) */
+[data-testid="stAppViewContainer"] [data-testid="stMainBlockContainer"] {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Cifras tabulares en toda la app: los montos se alinean por dígito (C2) */
+[data-testid="stMetricValue"],
+[data-testid="stMarkdownContainer"] td,
+[data-testid="stDataFrame"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tarjeta KPI: borde izquierdo dorado, fondo blanco, sombra suave (C5) */
+[data-testid="stMetric"] {
+  background: var(--ot-superficie);
+  border-left: 4px solid var(--ot-dorado-brillo);
+  border-radius: var(--ot-radio);
+  box-shadow: var(--ot-sombra);
+  padding: 1rem 1.25rem;
+}
+
+/* Barra lateral: fondo de marca */
+[data-testid="stSidebar"] {
+  background-color: var(--ot-sidebar);
+}
+
+/* Botones: alto táctil >=44px, foco visible con anillo dorado oscuro (C5/C8) */
+[data-testid="stBaseButton-primary"],
+[data-testid="stBaseButton-secondary"],
+[data-testid="stFormSubmitButton"] button,
+[data-testid="stBaseButton-secondaryFormSubmit"] {
+  min-height: 44px;
+}
+[data-testid="stBaseButton-primary"]:focus-visible,
+[data-testid="stBaseButton-secondary"]:focus-visible,
+[data-testid="stFormSubmitButton"] button:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--ot-dorado-texto) !important;
+  outline-offset: 2px;
+}
+
+/* Filete dorado fino bajo los títulos de página (encabezado_pagina, C5) */
+.ot-encabezado-pagina {
+  border-bottom: 1px solid var(--ot-dorado-brillo);
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+}
+.ot-encabezado-pagina__titulo {
+  font-family: "Playfair Display", Georgia, serif;
+  font-weight: 600;
+  font-size: 1.75rem;
+  color: var(--ot-tinta);
+  line-height: 1.2;
+  margin: 0;
+}
+.ot-encabezado-pagina__subtitulo {
+  color: var(--ot-texto-secundario);
+  font-size: 0.95rem;
+  margin: 0.15rem 0 0 0;
+}
+
+/* Marca en script: nombre del negocio, saludos (C2 — uso restringido) */
+.ot-marca-script {
+  font-family: "Great Vibes", "Brush Script MT", cursive;
+  font-size: 2.1rem;
+  color: var(--ot-primario);
+  line-height: 1;
+}
+
+/* Chips de estado: icono + texto, nunca solo color (C5/C8) */
+.ot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.ot-chip--exito { background: #E3F3EA; color: var(--ot-exito); }
+.ot-chip--alerta { background: var(--ot-alerta-fondo); color: var(--ot-alerta-texto); }
+.ot-chip--error { background: #FBE9E7; color: var(--ot-error); }
+.ot-chip--info { background: var(--ot-rosa-veta); color: var(--ot-dorado-texto); }
+
+/* Etiquetas pequeñas en mayúscula con tracking (C3) */
+.ot-etiqueta {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.75rem;
+  color: var(--ot-texto-secundario);
+}
+
+/* Pie de página */
+.ot-pie-pagina {
+  text-align: center;
+  color: var(--ot-texto-secundario);
+  font-size: 0.85rem;
+  padding-top: 1rem;
+}
+
+/* Avatar de marca en la barra lateral (72px, D2) */
+.ot-avatar-sidebar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.ot-avatar-sidebar img {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+}

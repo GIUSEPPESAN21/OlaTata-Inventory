@@ -25,13 +25,18 @@ import streamlit as st
 
 from core import auth, schema
 from core.config import DEFAULT_DB_PATH, safe_secret
+from core.demo_mode import demo_activo, render_aviso_datos_prueba
 from core.permissions import ADMIN, PermisoDenegadoError
 from core.storage import Storage
 from core.timeutil import now_utc, parse_iso_utc, to_iso_utc
-from core.ui import encabezado_marca, mensaje_error_amable, pie_pagina, validar_password
+from core.ui import encabezado_marca, logo_path, mensaje_error_amable, pie_pagina, validar_password
 from views import ViewContext, vistas_visibles_para_rol
 
-st.set_page_config(page_title="Ola Tata · Inventario y Ventas", page_icon="👜", layout="wide")
+# A3/A2: favicon real generado por `scripts/build_logo_assets.py`. Si el
+# entorno todavía no corrió ese script (p.ej. un checkout nuevo), se
+# degrada al emoji anterior en vez de tronar `st.set_page_config`.
+_FAVICON = logo_path("favicon-32.png") or "👜"
+st.set_page_config(page_title="Ola Tata · Inventario y Ventas", page_icon=_FAVICON, layout="wide")
 
 
 # ----------------------------------------------------------- lógica pura
@@ -47,15 +52,38 @@ def decidir_pantalla(*, hay_usuarios: bool, sesion_valida: bool, must_change_pas
     return "app"
 
 
+_DEFAULT_DEMO_DB_PATH = "demo/OLATATA_DEMO.xlsx"
+
+
 def construir_storage() -> Storage:
     """Arma `Storage` leyendo los secretos de GitHub con `safe_secret`
     (nunca truena si no hay `secrets.toml`, p.ej. al correr en local por
-    primera vez). Sin token -> `sync_enabled=False` automáticamente."""
+    primera vez). Sin token -> `sync_enabled=False` automáticamente.
+
+    Modo demo (`DEMO=1`, ver `core.demo_mode`): apunta `local_path` al
+    libro de demostración en vez de a `OLATATA_DB.xlsx` (por defecto
+    `demo/OLATATA_DEMO.xlsx`, el mismo que escribe
+    `scripts/seed_demo.py`; override con la variable de entorno
+    `OLATATA_DB_PATH` si se quiere otra ruta) y FUERZA
+    `sync_enabled=False` sin importar si hay `GITHUB_TOKEN` configurado
+    en esta máquina — defensa en profundidad para nunca publicar datos
+    de prueba a la nube, igual que `scripts/seed_demo.py`."""
+    if demo_activo():
+        local_path = safe_secret("OLATATA_DB_PATH", _DEFAULT_DEMO_DB_PATH) or _DEFAULT_DEMO_DB_PATH
+        return Storage(
+            local_path=local_path,
+            github_repo=None,
+            github_token=None,
+            archive_repo=None,
+            sync_enabled=False,
+        )
+
     github_repo = safe_secret("GITHUB_REPO")
     github_token = safe_secret("GITHUB_TOKEN")
     archive_repo = safe_secret("GITHUB_REPO_ARCHIVE")
+    local_path = safe_secret("OLATATA_DB_PATH", DEFAULT_DB_PATH) or DEFAULT_DB_PATH
     return Storage(
-        local_path=DEFAULT_DB_PATH,
+        local_path=local_path,
         github_repo=github_repo,
         github_token=github_token,
         archive_repo=archive_repo,
@@ -141,7 +169,7 @@ def _render_app(storage, sesion: dict) -> None:
     vistas = vistas_visibles_para_rol(rol)
 
     with st.sidebar:
-        encabezado_marca()
+        encabezado_marca(contexto="sidebar")
         etiqueta_rol = "Administrador" if rol == ADMIN else "Vendedor"
         st.caption(f"{sesion['nombre']} · {etiqueta_rol}")
 
@@ -195,6 +223,10 @@ def _render_app(storage, sesion: dict) -> None:
 
 # ----------------------------------------------------------------- main
 def main() -> None:
+    # Modo demo (continuación §2.d): aviso permanente "DATOS DE PRUEBA"
+    # ANTES de enrutar a cualquier vista. No hace nada si DEMO!=1.
+    render_aviso_datos_prueba()
+
     storage = _storage_singleton()
 
     hay_usuarios = _hay_usuarios(storage)

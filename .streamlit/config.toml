@@ -4,10 +4,63 @@ primaryColor = "#C2185B"
 backgroundColor = "#FDEFF0"
 secondaryBackgroundColor = "#FCE8EC"
 textColor = "#2B1B22"
-font = "sans serif"
+linkColor = "#C2185B"
+font = "Inter"
+headingFont = "Playfair Display"
+baseFontSize = 17
+baseRadius = "12px"
+buttonRadius = "12px"
+showWidgetBorder = true
+dataframeHeaderBackgroundColor = "#C2185B"
+dataframeHeaderTextColor = "#FFFFFF"
+metricValueFontSize = "2.25rem"
+metricValueFontWeight = 600
+chartCategoricalColors = ["#C2185B", "#C09860", "#FC7DA9", "#7A5A1F", "#2B1B22"]
+
+# Fuentes autoalojadas (C2): servidas por Streamlit desde `static/fonts/`
+# (requiere server.enableStaticServing=true, ver abajo). Subconjunto
+# "latin" (cubre español: áéíóúñ¿¡) descargado con
+# `scripts/build_logo_assets.py`-adjacent sources — ver assets/fonts/
+# para la copia de referencia legible por humanos.
+[[theme.fontFaces]]
+family = "Inter"
+url = "app/static/fonts/inter-400.woff2"
+weight = "400"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "Inter"
+url = "app/static/fonts/inter-500.woff2"
+weight = "500"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "Inter"
+url = "app/static/fonts/inter-600.woff2"
+weight = "600"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "Inter"
+url = "app/static/fonts/inter-700.woff2"
+weight = "700"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "Playfair Display"
+url = "app/static/fonts/playfair-display-600.woff2"
+weight = "600"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "Great Vibes"
+url = "app/static/fonts/great-vibes-400.woff2"
+weight = "400"
+style = "normal"
 
 [server]
 enableXsrfProtection = true
+enableStaticServing = true
 maxUploadSize = 20
 
 [browser]
