@@ -261,8 +261,14 @@ streamlit==1.66.1  pandas==3.1.0  openpyxl==3.1.5  plotly==7.1.0
 bcrypt==5.0.0  python-barcode==0.16.1  Pillow==11.3.0  requests==2.34.2
 tzdata (solo Windows)
 --- dev ---
-pytest==9.2.0  pytest-cov==7.1.0  ruff==0.17.3
+pytest==9.2.0  pytest-cov==7.1.0  ruff==0.17.3  playwright==1.65.1
 ```
+
+`playwright` se añadió (continuación §4, verificación visual E1-E3) para la
+verificación visual real con Chromium headless (capturas de pantalla y
+smoke de fuentes/consola). Tras instalarlo corre `playwright install
+chromium` una vez por entorno (no es un paquete pip, no va en
+`requirements-dev.txt`).
 
 `requests` se añadió fuera de la lista original del encargo porque
 `core/storage.py` lo necesita para hablar con la API de GitHub (el lab
