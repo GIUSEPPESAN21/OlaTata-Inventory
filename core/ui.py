@@ -25,6 +25,7 @@ import secrets
 import string
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from core.money import format_cop
@@ -34,6 +35,7 @@ logger = logging.getLogger("olatata.ui")
 
 __all__ = [
     "PASSWORD_MIN_LENGTH",
+    "TOKENS",
     "validar_password",
     "generar_password_temporal",
     "generar_codigo_incidente",
@@ -47,10 +49,61 @@ __all__ = [
     "estado_vacio",
     "pie_pagina",
     "inyectar_identidad_visual",
+    "encabezado_pagina",
+    "chip_estado",
+    "render_logo",
+    "logo_path",
+    "plantilla_plotly_olatata",
+    "registrar_tema_plotly",
 ]
 
 PASSWORD_MIN_LENGTH = 8
 _ALFABETO_PASSWORD_TEMPORAL = string.ascii_letters + string.digits
+
+# --------------------------------------------------------------------
+# TOKENS: única fuente de verdad de la paleta/tipografía/escala (C1-C3).
+# Fijos por CLAUDE.md §8 y `tests/test_ui_theme.py` (colores de marca en
+# `.streamlit/config.toml`) — este dict solo los expone para que el
+# código Python (chips, plantilla Plotly, CSS inyectado) no repita los
+# hex a mano en varios sitios.
+# --------------------------------------------------------------------
+TOKENS = {
+    "color": {
+        "primario": "#C2185B",
+        "rosa_marca": "#FC7DA9",
+        "rosa_veta": "#F8C0D8",
+        "fondo": "#FDEFF0",
+        "superficie": "#FFFFFF",
+        "sidebar": "#FCE8EC",
+        "dorado_bronce": "#A07838",
+        "dorado_brillo": "#C09860",
+        "dorado_texto": "#7A5A1F",
+        "tinta": "#2B1B22",
+        "texto_secundario": "#6B4A57",
+        "exito": "#1E7E4F",
+        "error": "#B3261E",
+        "alerta_texto": "#8A5A00",
+        "alerta_fondo": "#FFF4D6",
+    },
+    "tipografia": {
+        "marca": "Great Vibes",
+        "titulos": "Playfair Display",
+        "interfaz": "Inter",
+    },
+    "escala_px": [14, 17, 20, 24, 29, 35, 42],
+    "radio_px": 12,
+}
+
+# Orden de color para gráficas Plotly (C6): nunca más de 5 series.
+_SECUENCIA_COLOR_PLOTLY = [
+    TOKENS["color"]["primario"],
+    TOKENS["color"]["dorado_brillo"],
+    TOKENS["color"]["rosa_marca"],
+    TOKENS["color"]["dorado_texto"],
+    TOKENS["color"]["tinta"],
+]
+
+_ASSETS_DIR = None  # se resuelve perezosamente en logo_path()
 
 
 def validar_password(password: str, minimo: int = PASSWORD_MIN_LENGTH) -> str | None:
@@ -162,38 +215,196 @@ def pie_pagina() -> None:
     )
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def logo_path(nombre: str = "olatata-logo.png") -> str | None:
+    """Ruta absoluta a un asset de `assets/brand/<nombre>`, o `None` si
+    todavía no se generó con `scripts/build_logo_assets.py` (para que la
+    app nunca truene si faltan los assets en un entorno nuevo)."""
+    ruta = _repo_root() / "assets" / "brand" / nombre
+    return str(ruta) if ruta.exists() else None
+
+
+_IDENTIDAD_VISUAL_INYECTADA_KEY = "_ot_identidad_visual_inyectada"
+
+
 def inyectar_identidad_visual() -> None:
-    """Carga Inter/Dancing Script desde Google Fonts y los aplica con
+    """Inyecta el CSS único del proyecto (`assets/theme.css`, C7) con
     selectores ESTABLES (`html`, `body`, `data-testid`) — nunca clases
     autogeneradas `.st-emotion-cache-*` (§9: esa es la falla real que se
-    encontró en el repo de referencia Rapi Tienda)."""
+    encontró en el repo de referencia Rapi Tienda). Las fuentes
+    (Inter/Playfair Display/Great Vibes) se autoalojan vía
+    `[[theme.fontFaces]]` en `.streamlit/config.toml` — este módulo solo
+    aplica el resto del sistema de diseño (chips, tarjetas KPI, foco,
+    reduced-motion, etc.).
+
+    Idempotente dentro de una misma sesión de Streamlit: el CSS solo se
+    reinyecta una vez por rerun para no duplicar el bloque `<style>`."""
     import streamlit as st
 
+    try:
+        css = (_repo_root() / "assets" / "theme.css").read_text(encoding="utf-8")
+    except OSError:
+        css = ""
+    if css:
+        st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+
+
+def encabezado_marca(nombre_negocio: str = "Ola Tata", *, contexto: str = "pantalla") -> None:
+    """Cabecera de marca: logo circular + nombre en Great Vibes (A3/D1/D2).
+
+    `contexto="pantalla"` (por defecto, usado por login y primer
+    arranque): logo grande (180 px) centrado, pensado para una tarjeta
+    central.
+    `contexto="sidebar"`: avatar pequeño (72 px) + nombre en script al
+    lado (A3: el texto de marca va en texto vivo, nunca dentro de la
+    imagen) — pensado para la barra lateral.
+
+    Si el logo aún no se generó (`scripts/build_logo_assets.py` no
+    corrió en este entorno) se degrada a solo texto, sin tronar."""
+    import streamlit as st
+
+    inyectar_identidad_visual()
+    ruta_logo = logo_path("olatata-logo.png") if contexto == "sidebar" else logo_path("olatata-logo-256.png")
+
+    if contexto == "sidebar":
+        if ruta_logo:
+            import base64
+
+            b64 = base64.b64encode(Path(ruta_logo).read_bytes()).decode("ascii")
+            st.markdown(
+                f"""
+                <div class="ot-avatar-sidebar">
+                    <img src="data:image/png;base64,{b64}" alt="Logo de {nombre_negocio}">
+                    <span class="ot-marca-script">{nombre_negocio}</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(f"<div class='ot-marca-script'>{nombre_negocio}</div>", unsafe_allow_html=True)
+        return
+
+    if ruta_logo:
+        col_izq, col_centro, col_der = st.columns([1, 2, 1])
+        with col_centro:
+            st.image(ruta_logo, width=180, caption=None)
     st.markdown(
-        """
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Dancing+Script:wght@600&display=swap" rel="stylesheet">
-        <style>
-        html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {
-            font-family: 'Inter', sans-serif;
-        }
-        .ola-tata-marca {
-            font-family: 'Dancing Script', cursive;
-            font-size: 2.1rem;
-            color: #C2185B;
-            line-height: 1;
-        }
-        </style>
+        f"<div class='ot-marca-script' style='text-align:center'>{nombre_negocio}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_logo(tamano_px: int = 72, *, nombre_archivo: str = "olatata-logo.png", alt: str = "Logo de Ola Tata") -> None:
+    """Pinta el logo circular a un tamaño dado, con texto alternativo
+    (C8). A3: NUNCA estirar/deformar (se usa `width=`, que conserva la
+    proporción 1:1 de un PNG ya cuadrado); por debajo de 56 px usa el
+    derivado más pequeño disponible en vez de forzar el de 512 px."""
+    import streamlit as st
+
+    if tamano_px < 56 and nombre_archivo == "olatata-logo.png":
+        nombre_archivo = "olatata-logo-64.png"
+    ruta = logo_path(nombre_archivo)
+    if ruta is None:
+        return
+    st.image(ruta, width=tamano_px)
+
+
+def encabezado_pagina(titulo: str, subtitulo: str | None = None) -> None:
+    """Encabezado de página (C5/D-todas): título en Playfair Display +
+    subtítulo gris + filete dorado fino debajo. Sin acción principal
+    embebida aquí a propósito: cada vista decide dónde poner su botón
+    (p.ej. a la derecha con `st.columns`), este helper solo pinta el
+    título/subtítulo/filete de forma consistente."""
+    import streamlit as st
+
+    inyectar_identidad_visual()
+    subtitulo_html = (
+        f"<p class='ot-encabezado-pagina__subtitulo'>{subtitulo}</p>" if subtitulo else ""
+    )
+    st.markdown(
+        f"""
+        <div class="ot-encabezado-pagina">
+            <h1 class="ot-encabezado-pagina__titulo">{titulo}</h1>
+            {subtitulo_html}
+        </div>
         """,
         unsafe_allow_html=True,
     )
 
 
-def encabezado_marca(nombre_negocio: str = "Ola Tata") -> None:
-    """Cabecera con el nombre del negocio en Dancing Script (§9: sin logo
-    por ahora, así que se usa tipografía de marca en vez de una imagen)."""
-    import streamlit as st
+_CHIP_ICONOS = {
+    "exito": "check_circle",
+    "alerta": "warning",
+    "error": "cancel",
+    "info": "info",
+}
 
-    inyectar_identidad_visual()
-    st.markdown(f"<div class='ola-tata-marca'>{nombre_negocio}</div>", unsafe_allow_html=True)
+
+def chip_estado(texto: str, tipo: str = "info", *, icono: str | None = None) -> str:
+    """Devuelve el HTML (listo para `st.markdown(..., unsafe_allow_html=True)`)
+    de un chip de estado: icono + texto, NUNCA solo color (C5/C8 —
+    "nada comunica solo por color"). `tipo` en {"exito","alerta","error","info"}.
+
+    Pensado para que cualquier vista (p.ej. `views/inventario.py` para
+    "En stock"/"Stock bajo"/"Agotado", o `views/vender.py` para
+    "Anulada"/"Pendiente de sincronizar") lo use sin tener que repetir
+    el marcado ni los colores."""
+    tipo = tipo if tipo in _CHIP_ICONOS else "info"
+    nombre_icono = icono or _CHIP_ICONOS[tipo]
+    return (
+        f'<span class="ot-chip ot-chip--{tipo}">'
+        f'<span class="material-symbols-outlined" style="font-size:1rem">{nombre_icono}</span>'
+        f"{texto}</span>"
+    )
+
+
+def plantilla_plotly_olatata() -> Any:
+    """Construye (sin registrar globalmente) la plantilla Plotly
+    "olatata" (C6): fuente Inter, fondo transparente, sin rejillas
+    pesadas, colores en el orden de marca, ejes en $ sin decimales,
+    `separators=",."` (formato colombiano: punto de miles, coma
+    decimal). Devuelve el objeto `go.layout.Template` listo para usar
+    como `fig.update_layout(template=plantilla_plotly_olatata())` — no
+    depende de que `registrar_tema_plotly()` se haya llamado antes."""
+    import plotly.graph_objects as go
+
+    colores = TOKENS["color"]
+    return go.layout.Template(
+        layout=go.Layout(
+            font=dict(family="Inter, sans-serif", color=colores["tinta"], size=13),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            colorway=_SECUENCIA_COLOR_PLOTLY,
+            separators=",.",
+            xaxis=dict(showgrid=False, zeroline=False, linecolor=colores["texto_secundario"]),
+            yaxis=dict(
+                showgrid=True,
+                gridcolor="rgba(107,74,87,0.12)",
+                zeroline=False,
+                tickprefix="$ ",
+                tickformat=",.0f",
+            ),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            margin=dict(l=40, r=20, t=40, b=40),
+        )
+    )
+
+
+def registrar_tema_plotly() -> None:
+    """Registra la plantilla "olatata" en `plotly.io.templates` bajo el
+    nombre `"olatata"` y la deja como plantilla por defecto
+    (`pio.templates.default`). Llamarla una vez (p.ej. al construir una
+    gráfica) es suficiente — es idempotente. Pensado para que
+    `views/analisis.py` (u otra vista con gráficas Plotly) solo haga:
+
+        from core.ui import registrar_tema_plotly
+        registrar_tema_plotly()
+        fig = px.bar(..., template="olatata")
+    """
+    import plotly.io as pio
+
+    pio.templates["olatata"] = plantilla_plotly_olatata()
+    pio.templates.default = "olatata"
