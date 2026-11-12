@@ -99,6 +99,87 @@ Reglas duras:
   botella). Ver `tests/test_fastxlsx.py` y `tests/test_perf_budgets.py`
   para el benchmark y las pruebas de round-trip de tipos.
 
+## Claves de `CONFIG` (clave/valor libre, ver `core/schema.py:CONFIG`)
+
+**Fuente ejecutable de verdad: `core/config_keys.py`.**
+`tests/test_config_keys_contrato.py` escanea `app.py`, `core/*.py`,
+`views/*.py` y `scripts/*.py` buscando llamadas a `get_config("...")` /
+`set_config("...")` con una clave **literal**, y falla si esa clave no
+está en `core/config_keys.CLAVES_CONOCIDAS` (ni es un contador interno,
+ver abajo). Añadir una clave nueva: documentarla aquí Y en
+`core/config_keys.py` en el mismo cambio, o la prueba de contrato falla.
+
+Estas claves **reemplazan** a las nombradas en la especificación de
+diseño original (`nombre_negocio`, `categorias`, `metodos_pago_activos`,
+`mensaje_recibo`) — son las que el código de este repo lee/escribe de
+verdad hoy.
+
+### Negocio (editables desde Ajustes → pestaña "Negocio", `views/ajustes.py`)
+
+| Clave | Escrita por | Leída por | Formato |
+|---|---|---|---|
+| `negocio_nombre` | Ajustes | Ajustes (valor por defecto del formulario) | texto libre |
+| `negocio_whatsapp` | Ajustes | Ajustes (valor por defecto del formulario) | texto libre |
+| `negocio_mensaje_recibo` | Ajustes | Ajustes (valor por defecto) | texto libre, máx. 4000 |
+| `negocio_categorias` | Ajustes | Ajustes (valor por defecto); `views/inventario.py` deriva el filtro de categorías de la hoja `productos`, no de esta clave | lista separada por `"\|"`, sin vacíos |
+| `negocio_metodos_pago_activos` | Ajustes | Ajustes (valor por defecto) | subconjunto de `schema.METODOS_PAGO` separado por `"\|"` |
+
+### Operación
+
+| Clave | Escrita por | Leída por | Formato |
+|---|---|---|---|
+| `sesion_minutos` | Ajustes, `scripts/seed_db.py` | `app.py` (expiración de sesión) | entero en texto, minutos |
+| `permitir_vender_sin_stock` | `scripts/seed_db.py` (ninguna vista la escribe hoy — ver hallazgo abajo) | `core/sales.py` (permite vender con stock insuficiente) | `"true"` / `"false"` |
+| `ultimo_mes_cerrado` | `core/monthly_close.py` | `core/monthly_close.py` (idempotencia del cierre) | `"YYYY-MM"` o ausente |
+| `telefono_whatsapp` | `scripts/seed_db.py` (ninguna vista la escribe hoy — ver hallazgo abajo) | `views/vender.py` (enlace de WhatsApp del recibo) | dígitos, con o sin `+`/espacios |
+| `cierre::progreso` | `core/monthly_close.py` (en cada paso del cierre) | solo informativo para un admin; la reanudación NUNCA depende de esta clave, sino del estado observable (`ultimo_mes_cerrado` + releer lo archivado) | JSON `{year, month, paso, archivo, sha256}` |
+
+**Hallazgo (no corregido aquí; lo cierra quien edite `views/ajustes.py` o
+`views/vender.py`):** Ajustes guarda el WhatsApp del negocio en
+`negocio_whatsapp`, pero el recibo de venta (`views/vender.py:255`) lee
+`telefono_whatsapp` — una clave distinta que ninguna vista actualiza. Si
+un admin cambia el WhatsApp desde Ajustes, el enlace del recibo sigue
+usando el valor sembrado por `scripts/seed_db.py` y nunca se actualiza.
+
+### Informativas
+
+Sembradas por `scripts/seed_db.py`; ningún módulo las lee todavía (se
+reservan para un futuro encabezado/tema que las necesite):
+
+`instagram`, `ciudades`, `zona_horaria`, `moneda`.
+
+### Contadores internos (no son "claves de negocio")
+
+`Storage.next_counter(nombre, reset_key=None)` guarda su estado en
+`contador::<nombre>::<reset_key o 'global'>` (p.ej.
+`contador::ventas::2026-11`). Son un detalle de implementación del
+primitivo de `core/storage.py`, nunca se leen/escriben por nombre
+literal fuera de `next_counter` mismo — por eso no están enumerados uno
+a uno en `CLAVES_CONOCIDAS`; la prueba de contrato los reconoce por el
+prefijo `contador::`.
+
+## `scripts/seed_demo.py` — compuerta de seguridad de los datos de demo
+
+Genera un libro 100% ficticio para explorar/capturar la app, NUNCA datos
+reales. Reglas duras (ver `tests/test_seed_demo_compuerta.py`):
+
+- Requiere `DEMO=1` exacto en el entorno. Sin eso, `main()` termina con
+  `SystemExit` antes de tocar disco — ningún archivo se escribe.
+- Rechaza cualquier ruta de salida cuyo nombre sea `OLATATA_DB.xlsx`
+  (sin distinguir mayúsculas), sin importar la carpeta. Por defecto
+  escribe en `demo/OLATATA_DEMO.xlsx` (en `.gitignore`).
+- Usa `_AlmacenDemoSoloLocal` (subclase de `core.storage.Storage` local
+  a este script): el constructor fuerza `github_repo=None,
+  github_token=None, sync_enabled=False` sin importar las variables de
+  entorno reales (p.ej. si la app de producción ya tiene `GITHUB_TOKEN`
+  configurado en la misma máquina), y `_publish_to_github` se
+  sobreescribe para **lanzar** `RuntimeError` si alguna vez se invocara
+  — defensa en profundidad, no solo "no se llama".
+- `core.demo_mode.render_aviso_datos_prueba()` (módulo nuevo, no
+  `app.py`/`core/ui.py`) pinta el aviso permanente "DATOS DE PRUEBA"
+  cuando `DEMO=1`. A5 lo integra con una línea al inicio de `app.py`,
+  antes de enrutar a cualquier vista.
+
 ## `core/permissions.py` (§10: revalidado en core/, no solo en la UI)
 
 ```python

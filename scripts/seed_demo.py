@@ -10,14 +10,22 @@ Uso como librería (lo que usan `scripts/smoke_e2e.py` y las pruebas):
 
     from scripts.seed_demo import crear_usuarios_demo, crear_catalogo_y_proveedores, generar_ventas_dia
 
-Uso como script (crea un libro de demostración en disco para explorar):
+Uso como script (crea un libro de demostración en disco para explorar) —
+COMPUERTA DE SEGURIDAD (§2 de la continuación): solo corre con `DEMO=1`
+en el entorno; sin esa variable termina con error y no escribe nada.
+Escribe únicamente bajo `demo/` (nunca puede sobrescribir
+`OLATATA_DB.xlsx`, el libro vivo real) y usa `_AlmacenDemoSoloLocal`, que
+desactiva la publicación a GitHub A NIVEL DE ALMACENAMIENTO: incluso si
+`GITHUB_TOKEN`/`GITHUB_REPO` existen en el entorno, nunca llama a la API
+de GitHub (ver `tests/test_seed_demo_compuerta.py`):
 
-    python scripts/seed_demo.py --output OLATATA_DB_DEMO.xlsx --dias 90 --ventas-por-dia 40
+    DEMO=1 python scripts/seed_demo.py --dias 90 --ventas-por-dia 40
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import sys
 from datetime import date, datetime, timedelta
@@ -29,10 +37,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import schema  # noqa: E402
 from core.excel_safe import excel_safe  # noqa: E402
+from core.storage import Storage  # noqa: E402
 from core.timeutil import BOGOTA, UTC, now_utc, to_iso_utc  # noqa: E402
 
 SEED_POR_DEFECTO = 42
 SEDE = schema.SEDE_PRINCIPAL
+RUTA_DEMO_POR_DEFECTO = Path("demo/OLATATA_DEMO.xlsx")
+NOMBRE_LIBRO_VIVO_PROHIBIDO = "olatata_db.xlsx"
 
 # Catálogo ficticio fijo (bolsos y accesorios) — nunca datos reales.
 CATALOGO_BASE: list[dict] = [
@@ -574,15 +585,49 @@ def poblar_demo(storage, dias: int = 90, ventas_por_dia: int = 40, seed: int = S
     }
 
 
-def _construir_storage_real(output: Path):
-    from core.storage import Storage
+class _AlmacenDemoSoloLocal(Storage):
+    """`Storage` para datos de demostración (DEMO=1). La publicación a
+    GitHub queda desactivada A NIVEL DE ALMACENAMIENTO, no solo "no
+    llamada" desde este script: el constructor fuerza
+    `github_repo=github_token=None, sync_enabled=False` sin importar lo
+    que haya en el entorno (`GITHUB_TOKEN`/`GITHUB_REPO` de la app real
+    pueden existir perfectamente en la misma máquina), y
+    `_publish_to_github` se sobreescribe para LANZAR si alguna vez se
+    invocara — defensa en profundidad, no solo "omitir en silencio"."""
 
-    return Storage(local_path=output, sync_enabled=False)
+    def __init__(self, local_path: Path) -> None:
+        super().__init__(local_path=local_path, github_repo=None, github_token=None, archive_repo=None, sync_enabled=False)
+
+    def _publish_to_github(self) -> None:  # pragma: no cover - defensa en profundidad
+        raise RuntimeError(
+            "Modo demo (DEMO=1): intento de publicar a GitHub bloqueado a nivel de "
+            "almacenamiento. Los datos de demostración NUNCA se publican."
+        )
+
+
+def _validar_ruta_demo(output: Path) -> Path:
+    """R(§2.a): nunca se permite escribir sobre el libro vivo real."""
+    if output.name.strip().lower() == NOMBRE_LIBRO_VIVO_PROHIBIDO:
+        raise SystemExit(
+            f"Ruta rechazada: '{output}' tiene el mismo nombre que el libro vivo real "
+            f"({NOMBRE_LIBRO_VIVO_PROHIBIDO}). El generador de demo nunca escribe ahí."
+        )
+    return output
+
+
+def _exigir_modo_demo() -> None:
+    """R(§2.b): sin DEMO=1 en el entorno, termina con error claro y no
+    escribe nada (se llama ANTES de tocar disco)."""
+    if os.environ.get("DEMO") != "1":
+        raise SystemExit(
+            "Los datos de demostración requieren DEMO=1 en el entorno "
+            "(ej.: `DEMO=1 python scripts/seed_demo.py`). No se escribió nada."
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Genera un libro de demostración 100% ficticio para Ola Tata.")
-    parser.add_argument("--output", default="OLATATA_DB_DEMO.xlsx", help="Ruta del .xlsx de salida.")
+    parser.add_argument("--output", default=str(RUTA_DEMO_POR_DEFECTO), help="Ruta del .xlsx de salida (debe quedar bajo demo/).")
     parser.add_argument("--dias", type=int, default=90)
     parser.add_argument("--ventas-por-dia", type=int, default=40)
     parser.add_argument("--seed", type=int, default=SEED_POR_DEFECTO)
@@ -591,7 +636,11 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
 
-    storage = _construir_storage_real(Path(args.output))
+    _exigir_modo_demo()
+    output = _validar_ruta_demo(Path(args.output))
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    storage = _AlmacenDemoSoloLocal(output)
     resultado = poblar_demo(storage, dias=args.dias, ventas_por_dia=args.ventas_por_dia, seed=args.seed)
     resumen_compacto = {
         "dias_generados": resultado["dias_generados"],

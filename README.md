@@ -105,10 +105,13 @@ cada push/PR a `main` (Python 3.11 y 3.12 en paralelo). La cobertura de
 build.
 
 Para explorar la app con datos de ejemplo (100% ficticios, nunca datos
-reales de clientes):
+reales de clientes). Requiere `DEMO=1`; sin esa variable el script
+termina con error y no escribe nada, y nunca puede publicar a GitHub ni
+sobrescribir `OLATATA_DB.xlsx` (ver `docs/CONTRATOS.md`):
 
 ```bash
-python scripts/seed_demo.py --output OLATATA_DB_DEMO.xlsx --dias 90 --ventas-por-dia 40
+DEMO=1 python scripts/seed_demo.py --dias 90 --ventas-por-dia 40
+# escribe en demo/OLATATA_DEMO.xlsx (en .gitignore)
 ```
 
 ## Repos relacionados

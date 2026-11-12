@@ -5,6 +5,7 @@
 # Datos (nunca en el repo de código)
 *.xlsx
 _referencia/
+demo/
 
 # Python
 __pycache__/
