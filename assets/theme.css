@@ -160,6 +160,13 @@ img, [data-testid="stImage"] img {
 [class*="st-key-ot-card-ninguno-"] {
   border-color: var(--ot-rosa-veta) !important;
 }
+/* Zona de peligro (cierre de mes, D-ajustes): borde rojo, separada del
+   resto de las secciones. */
+[class*="st-key-ot-card-peligro"] {
+  border: 1.5px solid var(--ot-error) !important;
+  border-top: 3px solid var(--ot-error) !important;
+  background: #FFF8F7 !important;
+}
 @media (max-width: 480px) {
   [class*="st-key-ot-card-"] {
     padding: 1rem !important;
