@@ -122,7 +122,7 @@ def render(ctx: ViewContext) -> None:
         titulo_seccion("Carrito", centrado=False)
         idx_a_eliminar = None
         for idx, linea in enumerate(st.session_state.vender_carrito):
-            col1, col2, col3, col4 = st.columns([4, 2, 2, 1])
+            col1, col2, col3, col4 = st.columns([3.2, 1.6, 1.6, 1.6])
             col1.write(linea["nombre_snapshot"])
             nueva_cantidad = col2.number_input(
                 "Cant.", min_value=1, value=int(linea["cantidad"]), key=f"vender_cant_{idx}", step=1

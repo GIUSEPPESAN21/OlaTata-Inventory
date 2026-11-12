@@ -194,6 +194,16 @@ img, [data-testid="stImage"] img {
 [data-testid="stMetric"] [data-testid="stMetricValue"] {
   justify-content: center;
 }
+/* Cifras largas (p.ej. "$ 330.502.000" en una columna de 1/4 de ancho,
+   D-análisis) nunca se recortan con "...": se ajustan de tamaño o pasan
+   a una segunda línea en vez de truncarse en silencio (legibilidad). */
+[data-testid="stMetric"] [data-testid="stMetricValue"] div {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  word-break: break-word;
+  line-height: 1.15;
+}
 [data-testid="stMetric"] [data-testid="stMetricDeltaIcon-Up"],
 [data-testid="stMetric"] [data-testid="stMetricDelta"] {
   justify-content: center;
@@ -603,7 +613,12 @@ button:focus-visible {
   .ot-marca-script--hero { font-size: 2.5rem; }
   .ot-encabezado-pagina__titulo { font-size: 2.25rem; }
   .ot-total-carrito__valor { font-size: 2.25rem; }
-  [data-testid="stSidebar"] { min-width: 100% !important; }
+  /* NOTA: no se fuerza min-width/display en [data-testid="stSidebar"]
+     aquí -- Streamlit ya la convierte en un cajón (drawer) superpuesto
+     por debajo de ~576px de forma nativa; sobreescribir su ancho rompía
+     el layout (desborde horizontal real, verificado con Playwright a
+     390px: la barra lateral quedaba a medio ancho, empujando el
+     contenido principal fuera de la pantalla en vez de superponerse). */
 }
 
 /* Avatar circular de usuario en la barra lateral (72px heredado, D2) */
