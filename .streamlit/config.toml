@@ -13,7 +13,7 @@ buttonRadius = "16px"
 showWidgetBorder = true
 dataframeHeaderBackgroundColor = "#C2185B"
 dataframeHeaderTextColor = "#FFFFFF"
-metricValueFontSize = "2.75rem"
+metricValueFontSize = "2rem"
 metricValueFontWeight = 700
 chartCategoricalColors = ["#C2185B", "#C09860", "#FC7DA9", "#7A5A1F", "#2B1B22"]
 

@@ -248,18 +248,19 @@ def estado_vacio(mensaje: str, sugerencia: str | None = None, *, icono: str = "s
 
     inyectar_identidad_visual()
     sugerencia_html = f'<p class="ot-estado-vacio__sugerencia">{sugerencia}</p>' if sugerencia else ""
+    # Una sola línea (sin huecos en blanco): ver el comentario equivalente
+    # en `encabezado_pagina` — una línea vacía en medio de un bloque HTML
+    # de `st.markdown` lo corta y el resto se muestra como texto crudo.
+    html = (
+        '<div class="ot-estado-vacio">'
+        + f'<div class="ot-estado-vacio__motivo">{brand_rings_svg(96)}</div>'
+        + f'<div class="ot-estado-vacio__icono">{icono_md(icono, tamano_px=28)}</div>'
+        + f'<p class="ot-estado-vacio__mensaje">{mensaje}</p>'
+        + sugerencia_html
+        + "</div>"
+    )
     with card(acento="ninguno"):
-        st.markdown(
-            f"""
-            <div class="ot-estado-vacio">
-                <div class="ot-estado-vacio__motivo">{brand_rings_svg(96)}</div>
-                <div class="ot-estado-vacio__icono">{icono_md(icono, tamano_px=28)}</div>
-                <p class="ot-estado-vacio__mensaje">{mensaje}</p>
-                {sugerencia_html}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown(html, unsafe_allow_html=True)
 
 
 # `empty_state` es el nombre que pide el encargo de rediseño visual (§6
@@ -370,18 +371,19 @@ def kpi_card(etiqueta: str, valor_formateado: str, *, delta: str | None = None, 
             f'<div class="ot-kpi__delta {clase}">{icono_md(flecha, tamano_px=16)}{texto_delta}</div>'
         )
 
+    # Una sola línea (sin huecos en blanco) — ver el comentario en
+    # `encabezado_pagina` sobre por qué una línea vacía en medio de un
+    # bloque HTML de `st.markdown` lo corta a mitad de camino.
+    html = (
+        '<div class="ot-kpi">'
+        + f'<div class="ot-kpi__icono">{icono_md(icono, tamano_px=24)}</div>'
+        + f'<div class="ot-kpi__valor">{valor_formateado}</div>'
+        + f'<div class="ot-kpi__etiqueta">{etiqueta}</div>'
+        + delta_html
+        + "</div>"
+    )
     with card(acento="superior"):
-        st.markdown(
-            f"""
-            <div class="ot-kpi">
-                <div class="ot-kpi__icono">{icono_md(icono, tamano_px=24)}</div>
-                <div class="ot-kpi__valor">{valor_formateado}</div>
-                <div class="ot-kpi__etiqueta">{etiqueta}</div>
-                {delta_html}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown(html, unsafe_allow_html=True)
 
 
 def titulo_seccion(texto: str, *, centrado: bool = True) -> None:
@@ -392,7 +394,13 @@ def titulo_seccion(texto: str, *, centrado: bool = True) -> None:
 
     inyectar_identidad_visual()
     clase = "ot-titulo-seccion" + ("" if centrado else " ot-titulo-seccion--izquierda")
-    st.markdown(f'<h2 class="{clase}">{texto}</h2>', unsafe_allow_html=True)
+    # `<div role="heading">` en vez de un `<h2>` real: Streamlit envuelve
+    # cualquier encabezado HTML dentro de `st.markdown` con su propia
+    # maquinaria de anclas (id autogenerado + icono de enlace), lo que
+    # rompía el centrado/tamaño de este bloque (hallazgo de A5 durante la
+    # verificación visual). El rol ARIA conserva la semántica de
+    # encabezado para lectores de pantalla sin ese efecto secundario.
+    st.markdown(f'<div class="{clase}" role="heading" aria-level="2">{texto}</div>', unsafe_allow_html=True)
 
 
 def _repo_root() -> Path:
@@ -543,17 +551,21 @@ def encabezado_pagina(titulo: str, subtitulo: str | None = None, *, icono: str |
     icono_html = (
         f'<div class="ot-encabezado-pagina__icono">{icono_md(icono, tamano_px=28)}</div>' if icono else ""
     )
-    st.markdown(
-        f"""
-        <div class="ot-encabezado-pagina">
-            {icono_html}
-            <h1 class="ot-encabezado-pagina__titulo">{titulo}</h1>
-            {subtitulo_html}
-            <div class="ot-encabezado-pagina__filete"></div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    # Una sola línea, SIN huecos en blanco entre bloques: una línea vacía
+    # en medio de un `<div>` dentro de `st.markdown` cierra el bloque HTML
+    # según CommonMark y el resto se muestra como texto crudo en vez de
+    # pintarse (hallazgo de A5 durante la verificación visual — pasaba
+    # exactamente en esta función cuando `subtitulo=None`, porque esa
+    # línea del f-string multilinea quedaba en blanco).
+    html = (
+        '<div class="ot-encabezado-pagina">'
+        + icono_html
+        + f'<div class="ot-encabezado-pagina__titulo" role="heading" aria-level="1">{titulo}</div>'
+        + subtitulo_html
+        + '<div class="ot-encabezado-pagina__filete"></div>'
+        + "</div>"
     )
+    st.markdown(html, unsafe_allow_html=True)
 
 
 # `hero` es el nombre del encargo de rediseño visual; `encabezado_pagina`

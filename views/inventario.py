@@ -198,14 +198,21 @@ def _form_nuevo_producto(ctx: ViewContext, rol: str) -> None:
 def _form_editar_producto(ctx: ViewContext, rol: str, producto_id: str, productos: pd.DataFrame) -> None:
     fila = productos[productos["id"] == producto_id].iloc[0]
 
+    # Celda vacía en la hoja = NaN (float); "NaN or ''" en Python sigue
+    # siendo NaN (un float NaN es verdadero), así que el campo mostraba
+    # literalmente "nan" en vez de quedar vacío (capa visual: hallazgo de
+    # A5 durante la verificación visual, ver informe final).
+    def _texto_o_vacio(valor) -> str:
+        return "" if pd.isna(valor) else str(valor)
+
     with st.form(f"form_editar_{producto_id}"):
         nombre = st.text_input("Nombre", value=str(fila["nombre"]))
         c1, c2 = st.columns(2)
         with c1:
-            categoria = st.text_input("Categoría", value=str(fila["categoria"] or ""))
-            color = st.text_input("Color", value=str(fila["color"] or ""))
-            talla_tamano = st.text_input("Talla / tamaño", value=str(fila["talla_tamano"] or ""))
-            codigo_barras = st.text_input("Código de barras", value=str(fila["codigo_barras"] or ""))
+            categoria = st.text_input("Categoría", value=_texto_o_vacio(fila["categoria"]))
+            color = st.text_input("Color", value=_texto_o_vacio(fila["color"]))
+            talla_tamano = st.text_input("Talla / tamaño", value=_texto_o_vacio(fila["talla_tamano"]))
+            codigo_barras = st.text_input("Código de barras", value=_texto_o_vacio(fila["codigo_barras"]))
         with c2:
             costo = st.number_input("Costo", min_value=0, step=1000, value=int(fila["costo"] or 0), format="%d")
             precio = st.number_input("Precio de venta", min_value=0, step=1000, value=int(fila["precio"] or 0), format="%d")

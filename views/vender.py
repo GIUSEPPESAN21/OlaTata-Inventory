@@ -216,7 +216,13 @@ def render(ctx: ViewContext) -> None:
             ctx.rerun()
 
         suma_pagos = sum(int(p["monto"]) for p in st.session_state.vender_pagos)
-        st.write(f"Total: **{format_cop(total_estimado)}**  ·  Pagado: **{format_cop(suma_pagos)}**")
+        # Dos columnas en vez de un solo st.write con dos montos: Streamlit
+        # interpreta "$...$" como LaTeX inline, y dos montos formateados con
+        # "$ " en el mismo texto (R1) abren/cierran un bloque matemático sin
+        # querer, mostrando "**" literales en vez de negrita (capa visual).
+        col_total, col_pagado = st.columns(2)
+        col_total.markdown(f"Total: **{format_cop(total_estimado)}**")
+        col_pagado.markdown(f"Pagado: **{format_cop(suma_pagos)}**")
         if suma_pagos != total_estimado:
             st.warning("La suma de los pagos debe ser exactamente igual al total.")
 

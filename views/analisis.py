@@ -188,10 +188,13 @@ def _render_hoy(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
                         nota,
                         usuario_id=getattr(ctx.usuario, "id", None),
                     )
-                    st.success(
-                        f"Cuadre registrado. Esperado: {format_cop(resultado['efectivo_esperado'])} · "
-                        f"Diferencia: {format_cop(resultado['diferencia'])}"
-                    )
+                    # Dos montos "$ ..." (R1) en el mismo texto markdown
+                    # pueden leerse como un bloque de LaTeX ("$...$") y
+                    # mostrar "**"/texto crudo en vez del número (capa
+                    # visual) — se escapa el signo antes de mostrarlo.
+                    esperado_md = format_cop(resultado["efectivo_esperado"]).replace("$", r"\$")
+                    diferencia_md = format_cop(resultado["diferencia"]).replace("$", r"\$")
+                    st.success(f"Cuadre registrado. Esperado: {esperado_md} · Diferencia: {diferencia_md}")
                     ctx.rerun()
                 except PermisoDenegadoError as exc:
                     st.error(str(exc))
