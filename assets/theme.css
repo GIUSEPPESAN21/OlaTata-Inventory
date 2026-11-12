@@ -2,7 +2,11 @@
  * Ola Tata · theme.css (A5 — SHELL/TEMA/AJUSTES)
  *
  * Único archivo CSS del proyecto (C7). Reglas duras:
- * - SOLO selectores estables: `[data-testid="..."]`, `html`, `body`.
+ * - SOLO selectores estables: `[data-testid="..."]`, `html`, `body`,
+ *   clases propias con prefijo `ot-`, y `[class*="st-key-ot-..."]`
+ *   (clase DOCUMENTADA que Streamlit agrega cuando un `st.container(key=...)`
+ *   lleva ese `key` — no es un hash autogenerado, es la API pública de
+ *   `key=` para estilizar contenedores).
  * - JAMÁS clases autogeneradas `.st-emotion-cache-*` (se rompen entre
  *   versiones de Streamlit). `tests/test_no_emotion_cache.py` falla si
  *   ese texto aparece en cualquier archivo del repo.
@@ -10,13 +14,14 @@
  *   (colores, radios, tipografía base, color de encabezado de tablas,
  *   tamaño/peso de st.metric) NO se repite aquí.
  *
- * Esto se inyecta una sola vez por `core.ui.inyectar_identidad_visual()`
- * con un <link> a este archivo servido por Streamlit (requiere
- * `server.enableStaticServing=true`, ver `.streamlit/config.toml`).
+ * Esto se inyecta por `core.ui.inyectar_identidad_visual()` (idempotente
+ * por rerun) con un `<style>` embebido — no requiere `enableStaticServing`
+ * para el CSS en sí (las fuentes sí lo requieren, ver config.toml).
  */
 
 :root {
   --ot-primario: #C2185B;
+  --ot-primario-oscuro: #9E1249;
   --ot-rosa-marca: #FC7DA9;
   --ot-rosa-veta: #F8C0D8;
   --ot-fondo: #FDEFF0;
@@ -31,8 +36,11 @@
   --ot-error: #B3261E;
   --ot-alerta-texto: #8A5A00;
   --ot-alerta-fondo: #FFF4D6;
-  --ot-radio: 12px;
-  --ot-sombra: 0 2px 8px rgba(43, 27, 34, 0.06);
+  --ot-radio: 16px;
+  --ot-radio-chico: 10px;
+  --ot-sombra-1: 0 1px 2px rgba(43, 27, 34, 0.05);
+  --ot-sombra-2: 0 10px 24px -8px rgba(194, 24, 91, 0.16);
+  --ot-sombra: var(--ot-sombra-1), var(--ot-sombra-2);
 }
 
 /* Respeta "prefers-reduced-motion": animaciones/transiciones <=200ms (C8) */
@@ -46,66 +54,378 @@
   }
 }
 
-/* Ancho máximo de contenido ~1200px (C3) */
+/* ------------------------------------------------------------- tipografía */
+.material-symbols-outlined {
+  font-family: "Material Symbols Outlined", "Segoe UI Symbol", sans-serif;
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-flex;
+  vertical-align: middle;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: "liga";
+  font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+}
+
+html, body, [data-testid="stAppViewContainer"] {
+  font-size: 18px;
+}
+@media (max-width: 480px) {
+  html, body, [data-testid="stAppViewContainer"] {
+    font-size: 17px;
+  }
+}
+body, [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] li {
+  line-height: 1.55;
+}
+[data-testid="stWidgetLabel"] p {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------- fondo de mármol */
+/* Base + 3 manchas radiales muy sutiles (D1): fijas, sin animación. El
+   cuerpo del documento nunca desborda horizontalmente (responsive). */
+html, body {
+  overflow-x: hidden;
+}
+body, [data-testid="stApp"] {
+  background-color: var(--ot-fondo);
+  background-image:
+    radial-gradient(ellipse 60% 45% at 12% 8%, rgba(248, 192, 216, 0.55), transparent 60%),
+    radial-gradient(ellipse 55% 40% at 90% 15%, rgba(252, 125, 169, 0.22), transparent 60%),
+    radial-gradient(ellipse 65% 50% at 50% 100%, rgba(248, 192, 216, 0.4), transparent 65%);
+  background-attachment: fixed;
+}
+
+/* Ancho máximo de contenido ~1200px (C3), con aire lateral consistente */
 [data-testid="stAppViewContainer"] [data-testid="stMainBlockContainer"] {
   max-width: 1200px;
   margin: 0 auto;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+@media (max-width: 480px) {
+  [data-testid="stAppViewContainer"] [data-testid="stMainBlockContainer"] {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+}
+
+/* Evita cualquier desborde horizontal a 390px: tablas/gráficas con su
+   propio scroll interno, nunca el body entero (responsive). */
+[data-testid="stDataFrame"], [data-testid="stTable"] {
+  overflow-x: auto !important;
+  max-width: 100%;
+}
+.ot-card-scroll {
+  overflow-x: auto;
+}
+img, [data-testid="stImage"] img {
+  max-width: 100%;
+  height: auto;
 }
 
 /* Cifras tabulares en toda la app: los montos se alinean por dígito (C2) */
 [data-testid="stMetricValue"],
 [data-testid="stMarkdownContainer"] td,
-[data-testid="stDataFrame"] {
+[data-testid="stDataFrame"],
+.ot-kpi__valor {
   font-variant-numeric: tabular-nums;
 }
 
-/* Tarjeta KPI: borde izquierdo dorado, fondo blanco, sombra suave (C5) */
+/* ------------------------------------------------------------- tarjetas */
+/* `core.ui.card()` crea `st.container(border=True, key="ot-card-<acento>-N")`.
+   Streamlit agrega la clase DOCUMENTADA `st-key-<key>` (no autogenerada) —
+   la seleccionamos por subcadena para no repetir cada N exacto. */
+[class*="st-key-ot-card-"] {
+  background: var(--ot-superficie) !important;
+  border: 1px solid var(--ot-rosa-veta) !important;
+  border-radius: var(--ot-radio) !important;
+  box-shadow: var(--ot-sombra);
+  padding: 1.5rem !important;
+  gap: 0.75rem;
+}
+[class*="st-key-ot-card-superior-"] {
+  border-top: 3px solid var(--ot-dorado-brillo) !important;
+}
+[class*="st-key-ot-card-izquierdo-"] {
+  border-left: 3px solid var(--ot-dorado-brillo) !important;
+}
+[class*="st-key-ot-card-ninguno-"] {
+  border-color: var(--ot-rosa-veta) !important;
+}
+/* Zona de peligro (cierre de mes, D-ajustes): borde rojo, separada del
+   resto de las secciones. */
+[class*="st-key-ot-card-peligro"] {
+  border: 1.5px solid var(--ot-error) !important;
+  border-top: 3px solid var(--ot-error) !important;
+  background: #FFF8F7 !important;
+}
+@media (max-width: 480px) {
+  [class*="st-key-ot-card-"] {
+    padding: 1rem !important;
+  }
+}
+
+/* Tarjeta KPI nativa (`st.metric` suelto, sin pasar por `kpi_card`):
+   mismo lenguaje visual, cifra grande centrada. */
 [data-testid="stMetric"] {
   background: var(--ot-superficie);
+  border: 1px solid var(--ot-rosa-veta);
   border-left: 4px solid var(--ot-dorado-brillo);
   border-radius: var(--ot-radio);
   box-shadow: var(--ot-sombra);
   padding: 1rem 1.25rem;
+  text-align: center;
+}
+[data-testid="stMetric"] [data-testid="stMetricLabel"] {
+  justify-content: center;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+  color: var(--ot-texto-secundario);
+}
+[data-testid="stMetric"] [data-testid="stMetricValue"] {
+  justify-content: center;
+}
+/* Cifras largas (p.ej. "$ 330.502.000" en una columna de 1/4 de ancho,
+   D-análisis) nunca se recortan con "...": se ajustan de tamaño o pasan
+   a una segunda línea en vez de truncarse en silencio (legibilidad). */
+[data-testid="stMetric"] [data-testid="stMetricValue"] div {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  word-break: break-word;
+  line-height: 1.15;
+}
+[data-testid="stMetric"] [data-testid="stMetricDeltaIcon-Up"],
+[data-testid="stMetric"] [data-testid="stMetricDelta"] {
+  justify-content: center;
 }
 
-/* Barra lateral: fondo de marca */
-[data-testid="stSidebar"] {
-  background-color: var(--ot-sidebar);
+/* ---------------------------------------------------------------- KPI card */
+.ot-kpi {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.35rem;
 }
+.ot-kpi__icono {
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  background: var(--ot-rosa-veta);
+  color: var(--ot-primario);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.25rem;
+}
+.ot-kpi__icono .material-symbols-outlined {
+  font-size: 26px;
+}
+.ot-kpi__valor {
+  font-family: "Inter", sans-serif;
+  font-weight: 700;
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  color: var(--ot-tinta);
+  line-height: 1.1;
+}
+.ot-kpi__etiqueta {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ot-texto-secundario);
+}
+.ot-kpi__delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  margin-top: 0.15rem;
+}
+.ot-kpi__delta .material-symbols-outlined {
+  font-size: 15px;
+}
+.ot-kpi__delta--sube { background: #EEF8F2; color: var(--ot-exito); /* #E3F3EA daba 4.40:1 (<4.5:1); #EEF8F2 da 4.66:1 */ }
+.ot-kpi__delta--baja { background: #FBE9E7; color: var(--ot-error); }
+/* --ot-dorado-texto sobre --ot-rosa-veta da 4.09:1 (<4.5:1): mismo
+   hallazgo que en .ot-chip--info / .ot-total-carrito__etiqueta. */
+.ot-kpi__delta--neutro { background: var(--ot-rosa-veta); color: var(--ot-texto-secundario); }
 
-/* Botones: alto táctil >=44px, foco visible con anillo dorado oscuro (C5/C8) */
+/* --------------------------------------------------------------- botones */
 [data-testid="stBaseButton-primary"],
-[data-testid="stBaseButton-secondary"],
-[data-testid="stFormSubmitButton"] button,
+[data-testid="stFormSubmitButton"] button[kind="primary"],
 [data-testid="stBaseButton-secondaryFormSubmit"] {
+  min-height: 44px;
+  font-weight: 600;
+  font-size: 1rem;
+  background: linear-gradient(180deg, var(--ot-primario) 0%, var(--ot-primario-oscuro) 100%);
+  box-shadow: 0 4px 14px -4px rgba(194, 24, 91, 0.45);
+  border: none;
+}
+[data-testid="stBaseButton-primary"]:hover,
+[data-testid="stFormSubmitButton"] button[kind="primary"]:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px -4px rgba(194, 24, 91, 0.5);
+}
+[data-testid="stBaseButton-secondary"],
+[data-testid="stBaseButton-tertiary"],
+[data-testid="stFormSubmitButton"] button[kind="secondary"] {
   min-height: 44px;
 }
 [data-testid="stBaseButton-primary"]:focus-visible,
 [data-testid="stBaseButton-secondary"]:focus-visible,
+[data-testid="stBaseButton-tertiary"]:focus-visible,
 [data-testid="stFormSubmitButton"] button:focus-visible,
 button:focus-visible {
   outline: 2px solid var(--ot-dorado-texto) !important;
   outline-offset: 2px;
 }
+/* Acciones principales (confirmar venta / cobrar / entrar): 52-60px alto,
+   texto 17-18px semibold (sección 2 del encargo). */
+[data-testid="stFormSubmitButton"] button,
+[data-testid="stBaseButton-primary"] {
+  min-height: 52px;
+  font-size: 1.05rem;
+}
 
-/* Filete dorado fino bajo los títulos de página (encabezado_pagina, C5) */
+/* ------------------------------------------------------------- sidebar */
+[data-testid="stSidebar"] {
+  background: linear-gradient(180deg, var(--ot-sidebar) 0%, #F8D7E2 100%);
+  border-right: 1px solid var(--ot-rosa-veta);
+}
+[data-testid="stSidebar"] [data-testid="stMainBlockContainer"],
+[data-testid="stSidebarContent"] {
+  max-width: none;
+}
+
+/* Avatar + nombre de marca, apilado vertical y centrado (D2) */
+.ot-avatar-sidebar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.25rem 0 1rem 0;
+  position: relative;
+}
+.ot-avatar-sidebar img {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  object-fit: cover;
+  position: relative;
+  z-index: 1;
+  box-shadow: var(--ot-sombra-2);
+}
+.ot-aros-wrap--sidebar {
+  position: absolute;
+  top: calc(60px - 65px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 0;
+  pointer-events: none;
+}
+.ot-marca-script--sidebar {
+  font-size: 2.1rem;
+}
+
+/* Navegación propia (botones + session_state, ver app.py): oculta el
+   `st.radio` nativo que ya no se usa y da look de píldora a los botones
+   de navegación mediante la clase `key=` de su contenedor. */
+[class*="st-key-ot-sidebar-nav-"] [data-testid="stBaseButton-primary"] {
+  border-radius: 999px !important;
+  justify-content: flex-start;
+  padding-left: 1.1rem;
+  background: var(--ot-primario);
+  box-shadow: none;
+}
+[class*="st-key-ot-sidebar-nav-"] [data-testid="stBaseButton-tertiary"] {
+  border-radius: 999px !important;
+  justify-content: flex-start;
+  padding-left: 1.1rem;
+  color: var(--ot-tinta);
+  font-weight: 500;
+}
+[class*="st-key-ot-sidebar-nav-"] [data-testid="stBaseButton-tertiary"]:hover {
+  background: rgba(194, 24, 91, 0.1);
+  color: var(--ot-primario);
+}
+[class*="st-key-ot-sidebar-nav-"] button p {
+  font-size: 1rem;
+}
+[class*="st-key-ot-sidebar-nav-"] [data-testid="stBaseButton-primary"],
+[class*="st-key-ot-sidebar-nav-"] [data-testid="stBaseButton-tertiary"] {
+  min-height: 46px;
+  font-size: 1rem;
+}
+[class*="st-key-ot-sidebar-nav-"] [data-testid="stElementContainer"] {
+  margin-bottom: 0.25rem;
+}
+
+/* ------------------------------------------------------- encabezado hero */
 .ot-encabezado-pagina {
-  border-bottom: 1px solid var(--ot-dorado-brillo);
-  padding-bottom: 0.5rem;
-  margin-bottom: 1rem;
+  text-align: center;
+  padding-bottom: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+.ot-encabezado-pagina__icono {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  background: var(--ot-rosa-veta);
+  color: var(--ot-primario);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+}
+.ot-encabezado-pagina__icono .material-symbols-outlined {
+  font-size: 28px;
 }
 .ot-encabezado-pagina__titulo {
-  font-family: "Playfair Display", Georgia, serif;
-  font-weight: 600;
-  font-size: 1.75rem;
+  font-family: "Great Vibes", "Brush Script MT", cursive;
+  font-weight: 400;
+  font-size: clamp(2.5rem, 6vw, 3.5rem);
   color: var(--ot-tinta);
-  line-height: 1.2;
+  line-height: 1.15;
   margin: 0;
 }
 .ot-encabezado-pagina__subtitulo {
   color: var(--ot-texto-secundario);
-  font-size: 0.95rem;
-  margin: 0.15rem 0 0 0;
+  font-size: 1.1rem;
+  margin: 0.35rem 0 0 0;
+}
+.ot-encabezado-pagina__filete {
+  width: 96px;
+  height: 3px;
+  margin: 0.85rem auto 0 auto;
+  background: linear-gradient(90deg, var(--ot-dorado-bronce), var(--ot-dorado-brillo));
+  border-radius: 999px;
+}
+
+/* H2 de sección (`core.ui.titulo_seccion`) */
+.ot-titulo-seccion {
+  font-family: "Playfair Display", Georgia, serif;
+  font-weight: 600;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  color: var(--ot-tinta);
+  text-align: center;
+  margin: 1.25rem 0 0.75rem 0;
+}
+.ot-titulo-seccion--izquierda {
+  text-align: left;
 }
 
 /* Marca en script: nombre del negocio, saludos (C2 — uso restringido) */
@@ -115,8 +435,94 @@ button:focus-visible {
   color: var(--ot-primario);
   line-height: 1;
 }
+.ot-marca-script--hero {
+  text-align: center;
+  font-size: clamp(2.75rem, 7vw, 4rem);
+  margin-top: 0.25rem;
+}
+.ot-hero-logo__subtitulo {
+  text-align: center;
+  color: var(--ot-texto-secundario);
+  font-size: 1.125rem;
+  margin: 0.25rem 0 1rem 0;
+}
 
-/* Chips de estado: icono + texto, nunca solo color (C5/C8) */
+/* Logo + aros del login/primer arranque (contenedor `key="ot-hero-logo"`) */
+[class*="st-key-ot-hero-logo"] {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin: 0 auto;
+}
+[class*="st-key-ot-hero-logo"] .ot-aros-wrap {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 0;
+  pointer-events: none;
+}
+[class*="st-key-ot-hero-logo"] [data-testid="stImage"] {
+  position: relative;
+  z-index: 1;
+}
+[class*="st-key-ot-hero-logo"] [data-testid="stImage"] img {
+  border-radius: 50%;
+  box-shadow: var(--ot-sombra-2);
+}
+
+/* Tarjeta de acceso centrada (login/primer arranque): el formulario vive
+   dentro de `core.ui.card(key="ot-card-login"/"ot-card-primer-arranque")`,
+   aquí solo se limita el ancho y se centra. */
+[class*="st-key-ot-card-login"],
+[class*="st-key-ot-card-primer-arranque"] {
+  max-width: 440px;
+  margin: 0 auto;
+}
+
+/* ---------------------------------------------------------- estado vacío */
+.ot-estado-vacio {
+  position: relative;
+  text-align: center;
+  padding: 1.5rem 1rem;
+}
+.ot-estado-vacio__motivo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 0;
+  pointer-events: none;
+}
+.ot-estado-vacio__icono {
+  position: relative;
+  z-index: 1;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 0.75rem auto;
+  border-radius: 999px;
+  background: var(--ot-rosa-veta);
+  color: var(--ot-primario);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ot-estado-vacio__mensaje {
+  position: relative;
+  z-index: 1;
+  color: var(--ot-tinta);
+  font-weight: 600;
+  margin: 0;
+}
+.ot-estado-vacio__sugerencia {
+  position: relative;
+  z-index: 1;
+  color: var(--ot-texto-secundario);
+  font-size: 0.95rem;
+  margin: 0.35rem 0 0 0;
+}
+
+/* ------------------------------------------------------------- chips */
 .ot-chip {
   display: inline-flex;
   align-items: center;
@@ -128,10 +534,13 @@ button:focus-visible {
   line-height: 1.6;
   white-space: nowrap;
 }
-.ot-chip--exito { background: #E3F3EA; color: var(--ot-exito); }
+.ot-chip--exito { background: #EEF8F2; color: var(--ot-exito); /* #E3F3EA daba 4.40:1 (<4.5:1); #EEF8F2 da 4.66:1 */ }
 .ot-chip--alerta { background: var(--ot-alerta-fondo); color: var(--ot-alerta-texto); }
 .ot-chip--error { background: #FBE9E7; color: var(--ot-error); }
-.ot-chip--info { background: var(--ot-rosa-veta); color: var(--ot-dorado-texto); }
+/* --ot-dorado-texto sobre --ot-rosa-veta da 4.09:1 (<4.5:1, texto chico
+   de un chip): se usa --ot-texto-secundario (4.93:1), hallazgo de A5
+   durante la verificación visual — ver test_theme_contrast.py. */
+.ot-chip--info { background: var(--ot-rosa-veta); color: var(--ot-texto-secundario); }
 
 /* Etiquetas pequeñas en mayúscula con tracking (C3) */
 .ot-etiqueta {
@@ -149,16 +558,76 @@ button:focus-visible {
   padding-top: 1rem;
 }
 
-/* Avatar de marca en la barra lateral (72px, D2) */
-.ot-avatar-sidebar {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin-bottom: 0.5rem;
+/* --------------------------------------------------------------- pestañas */
+[data-testid="stTabs"] [data-baseweb="tab-list"] {
+  gap: 0.25rem;
 }
-.ot-avatar-sidebar img {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  object-fit: cover;
+[data-testid="stTabs"] [data-baseweb="tab-highlight"] {
+  background-color: var(--ot-dorado-brillo) !important;
+  height: 3px;
 }
+[data-testid="stTabs"] button[aria-selected="true"] p {
+  color: var(--ot-primario);
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------- dataframe cebra */
+[data-testid="stDataFrame"] {
+  border: 1px solid var(--ot-rosa-veta);
+  border-radius: var(--ot-radio-chico);
+}
+
+/* ------------------------------------------------------------- carrito */
+.ot-total-carrito {
+  text-align: center;
+  background: var(--ot-rosa-veta);
+  border: 1px solid var(--ot-dorado-brillo);
+  border-radius: var(--ot-radio);
+  padding: 1rem;
+  margin: 0.75rem 0;
+}
+.ot-total-carrito__etiqueta {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+  font-weight: 600;
+  /* --ot-dorado-texto sobre --ot-rosa-veta da 4.09:1 (<4.5:1, texto
+     chico): se usa --ot-texto-secundario (4.93:1) en su lugar, ver
+     tests/test_theme_contrast.py::test_pares_texto_normal_cumplen_4_5_a_1 */
+  color: var(--ot-texto-secundario);
+}
+.ot-total-carrito__valor {
+  font-family: "Inter", sans-serif;
+  font-weight: 700;
+  font-size: clamp(2.25rem, 6vw, 3.5rem);
+  color: var(--ot-tinta);
+  font-variant-numeric: tabular-nums;
+}
+.ot-precio-producto {
+  font-weight: 600;
+  font-size: 1.5rem;
+  color: var(--ot-primario);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------- responsive */
+@media (max-width: 1100px) and (min-width: 769px) {
+  [data-testid="stAppViewContainer"] [data-testid="stMainBlockContainer"] {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+@media (max-width: 480px) {
+  .ot-marca-script--hero { font-size: 2.5rem; }
+  .ot-encabezado-pagina__titulo { font-size: 2.25rem; }
+  .ot-total-carrito__valor { font-size: 2.25rem; }
+  /* NOTA: no se fuerza min-width/display en [data-testid="stSidebar"]
+     aquí -- Streamlit ya la convierte en un cajón (drawer) superpuesto
+     por debajo de ~576px de forma nativa; sobreescribir su ancho rompía
+     el layout (desborde horizontal real, verificado con Playwright a
+     390px: la barra lateral quedaba a medio ancho, empujando el
+     contenido principal fuera de la pantalla en vez de superponerse). */
+}
+
+/* Avatar circular de usuario en la barra lateral (72px heredado, D2) */
+.ot-avatar-sidebar img { max-width: 100%; }

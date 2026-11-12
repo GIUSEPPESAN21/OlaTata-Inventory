@@ -29,7 +29,15 @@ from core.demo_mode import demo_activo, render_aviso_datos_prueba
 from core.permissions import ADMIN, PermisoDenegadoError
 from core.storage import Storage
 from core.timeutil import now_utc, parse_iso_utc, to_iso_utc
-from core.ui import encabezado_marca, logo_path, mensaje_error_amable, pie_pagina, validar_password
+from core.ui import (
+    ICONOS_VISTA,
+    encabezado_marca,
+    logo_path,
+    mensaje_error_amable,
+    pie_pagina,
+    reiniciar_identidad_visual_para_este_rerun,
+    validar_password,
+)
 from views import ViewContext, vistas_visibles_para_rol
 
 # A3/A2: favicon real generado por `scripts/build_logo_assets.py`. Si el
@@ -181,27 +189,43 @@ def _render_app(storage, sesion: dict) -> None:
 
         if not vistas:
             st.warning("Tu usuario no tiene pantallas asignadas todavía.")
-            if st.button("Cerrar sesión", use_container_width=True):
+            if st.button("Cerrar sesión", use_container_width=True, icon=":material/logout:"):
                 _cerrar_sesion()
                 st.rerun()
             pie_pagina()
             return
 
         claves = [v["key"] for v in vistas]
-        etiquetas = {v["key"]: f"{v['icon']} {v['label']}" for v in vistas}
         vista_guardada = st.session_state.get("vista_actual")
         if vista_guardada not in claves:
             vista_guardada = claves[0]
-        seleccion = st.radio(
-            "Menú",
-            options=claves,
-            index=claves.index(vista_guardada),
-            format_func=lambda k: etiquetas[k],
-            label_visibility="collapsed",
-        )
-        st.session_state["vista_actual"] = seleccion
+            st.session_state["vista_actual"] = vista_guardada
 
-        if st.button("Cerrar sesión", use_container_width=True):
+        # Navegación propia (botones + session_state, D-sidebar): el
+        # ítem activo se pinta como píldora sólida (`type="primary"`,
+        # estilizada en `assets/theme.css` vía la clase `key=` del
+        # contenedor) con icono Material real (`icon=":material/...:"`,
+        # soporte nativo de `st.button` desde Streamlit >=1.36 — no
+        # depende de ningún font-face propio). Se probó primero
+        # `st.radio` + CSS sobre `data-testid` estables, pero ese widget
+        # no permite renderizar un icono real dentro de cada opción (solo
+        # texto plano); esta ruta sí lo permite sin tocar `views/__init__.py`.
+        with st.container(key="ot-sidebar-nav"):
+            for vista in vistas:
+                activa = vista["key"] == vista_guardada
+                if st.button(
+                    vista["label"],
+                    key=f"nav_{vista['key']}",
+                    icon=f":material/{ICONOS_VISTA.get(vista['key'], 'circle')}:",
+                    type="primary" if activa else "tertiary",
+                    use_container_width=True,
+                ):
+                    st.session_state["vista_actual"] = vista["key"]
+                    st.rerun()
+        seleccion = st.session_state["vista_actual"]
+
+        st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+        if st.button("Cerrar sesión", use_container_width=True, icon=":material/logout:"):
             _cerrar_sesion()
             st.rerun()
         pie_pagina()
@@ -229,6 +253,11 @@ def _render_app(storage, sesion: dict) -> None:
 
 # ----------------------------------------------------------------- main
 def main() -> None:
+    # Permite que `core.ui.inyectar_identidad_visual()` vuelva a pintar el
+    # bloque `<style>` una vez en ESTE rerun (el DOM anterior ya no
+    # existe) sin duplicarlo dentro del mismo rerun (ver su docstring).
+    reiniciar_identidad_visual_para_este_rerun()
+
     # Modo demo (continuación §2.d): aviso permanente "DATOS DE PRUEBA"
     # ANTES de enrutar a cualquier vista. No hace nada si DEMO!=1.
     render_aviso_datos_prueba()

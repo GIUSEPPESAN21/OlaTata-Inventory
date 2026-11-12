@@ -2,7 +2,7 @@
 
 Propiedad de A5 (SHELL/TEMA/AJUSTES). Script reproducible: no se editan
 las imágenes a mano. Entrada real verificada (ver `docs/CONTRATOS.md` y
-el informe de A5): `C:\\Users\\LENOVO\\Downloads\\olatata-logo.jpg`,
+el informe de A5): `C:\\Users\\LENOVO\\Downloads\\Logo Ola Tata\\olatata-logo.jpg`,
 JPEG de 690x690 px, círculo rosado con aros dorados sobre fondo
 cuadrado gris claro (NO transparente) — por eso hace falta recorte
 circular con máscara.
@@ -30,12 +30,16 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_ORIGEN = Path(r"C:\Users\LENOVO\Downloads\olatata-logo.jpg")
+DEFAULT_ORIGEN = Path(r"C:\Users\LENOVO\Downloads\Logo Ola Tata\olatata-logo.jpg")
 SALIDA_DIR = REPO_ROOT / "assets" / "brand"
 FONDO_CLARO = (253, 239, 240)  # #FDEFF0, para el apple-touch-icon
 
 TAMANO_CIRCULAR_BASE = 512
-INSET_PX = 3  # recorta hacia adentro del borde para quitar el halo gris
+INSET_PX = 6  # recorta hacia adentro del borde para quitar el halo gris
+# (verificado a mano: el cuadrado original tiene fondo gris #E1E1E1 solo
+# en las 4 esquinas, fuera del círculo impreso; sobre las líneas media
+# horizontal/vertical el círculo ya toca el borde del cuadrado. Con
+# INSET_PX=6 queda margen de sobra sin recortar el aro dorado.)
 DERIVADOS = (256, 128, 64)
 TAMANOS_FAVICON_ICO = (48, 32, 16)
 TAMANO_APPLE_TOUCH = 180

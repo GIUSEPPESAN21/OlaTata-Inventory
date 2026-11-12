@@ -20,6 +20,7 @@ from core.excel_report import exportar_periodo_excel
 from core.money import format_cop
 from core.permissions import PermisoDenegadoError, tiene_capacidad
 from core.timeutil import now_utc, local_date
+from core.ui import card, encabezado_pagina, estado_vacio, kpi_card, titulo_seccion
 from views import ViewContext
 
 _COLOR_PRIMARIO = PALETA_MARCA[0]
@@ -37,7 +38,7 @@ def render(ctx: ViewContext) -> None:
     hoy_local = local_date(now_utc())
     usuario_id = None if tiene_completo else usuario.id
 
-    st.title("📊 Análisis")
+    encabezado_pagina("Análisis", icono="bar_chart")
     if not tiene_completo:
         st.caption("Vista de vendedor: ventas, unidades y tickets de tu turno. Sin costos ni ganancia.")
 
@@ -55,13 +56,19 @@ def render(ctx: ViewContext) -> None:
 
 def _kpi_row(kpis: dict, tiene_completo: bool) -> None:
     columnas = st.columns(4 if not tiene_completo else 6)
-    columnas[0].metric("Ventas netas", format_cop(kpis["ventas_netas"]))
-    columnas[1].metric("Tickets", kpis["tickets"])
-    columnas[2].metric("Unidades", kpis["unidades"])
-    columnas[3].metric("Ticket promedio", kpis["ticket_promedio_fmt"])
+    with columnas[0]:
+        kpi_card("Ventas netas", format_cop(kpis["ventas_netas"]), icono="payments")
+    with columnas[1]:
+        kpi_card("Tickets", str(kpis["tickets"]), icono="receipt_long")
+    with columnas[2]:
+        kpi_card("Unidades", str(kpis["unidades"]), icono="inventory_2")
+    with columnas[3]:
+        kpi_card("Ticket promedio", kpis["ticket_promedio_fmt"], icono="request_quote")
     if tiene_completo:
-        columnas[4].metric("Ganancia", format_cop(kpis["ganancia"]))
-        columnas[5].metric("Margen", kpis["margen_pct"])
+        with columnas[4]:
+            kpi_card("Ganancia", format_cop(kpis["ganancia"]), icono="savings")
+        with columnas[5]:
+            kpi_card("Margen", kpis["margen_pct"], icono="percent")
 
 
 def _grafica_barras(barras: list[dict], titulo: str) -> go.Figure:
@@ -99,7 +106,7 @@ def _grafica_top(registros: list[dict], campo_y: str, etiqueta: str, titulo: str
 
 
 def _boton_excel(ctx: ViewContext, tipo: str, fecha_local: date, rol: str, usuario_id: str | None) -> None:
-    if st.button("⬇️ Exportar a Excel", key=f"exportar_{tipo}"):
+    if st.button("Exportar a Excel", key=f"exportar_{tipo}", icon=":material/download:"):
         contenido = exportar_periodo_excel(ctx.storage, tipo, fecha_local, rol, usuario_id=usuario_id)
         st.download_button(
             "Descargar .xlsx",
@@ -107,6 +114,7 @@ def _boton_excel(ctx: ViewContext, tipo: str, fecha_local: date, rol: str, usuar
             file_name=f"olatata_analisis_{tipo}_{fecha_local.isoformat()}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"descargar_{tipo}",
+            icon=":material/task:",
         )
 
 
@@ -115,66 +123,81 @@ def _render_hoy(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
     _kpi_row(kpis, tiene_completo)
 
     c1, c2 = st.columns(2)
-    c1.metric("vs. ayer", format_cop(kpis["comparativo_ayer"]["actual"]), delta=kpis["comparativo_ayer"]["variacion_pct"])
-    c2.metric(
-        "vs. mismo día semana pasada",
-        format_cop(kpis["comparativo_semana_pasada"]["actual"]),
-        delta=kpis["comparativo_semana_pasada"]["variacion_pct"],
-    )
+    with c1:
+        kpi_card(
+            "vs. ayer", format_cop(kpis["comparativo_ayer"]["actual"]),
+            delta=kpis["comparativo_ayer"]["variacion_pct"], icono="calendar_today",
+        )
+    with c2:
+        kpi_card(
+            "vs. mismo día semana pasada", format_cop(kpis["comparativo_semana_pasada"]["actual"]),
+            delta=kpis["comparativo_semana_pasada"]["variacion_pct"], icono="date_range",
+        )
 
-    st.subheader("Ventas por hora")
-    df_horas = pd.DataFrame(kpis["ventas_por_hora"])
-    fig = go.Figure(go.Bar(x=df_horas["hora"], y=df_horas["total"], marker_color=_COLOR_PRIMARIO, text=[format_cop(v) for v in df_horas["total"]]))
-    fig.update_layout(yaxis_tickprefix="$", yaxis_tickformat=",.0f", showlegend=False)
-    st.plotly_chart(fig, use_container_width=True, key="hoy_ventas_por_hora")
+    with card(acento="superior"):
+        titulo_seccion("Ventas por hora", centrado=False)
+        df_horas = pd.DataFrame(kpis["ventas_por_hora"])
+        fig = go.Figure(go.Bar(x=df_horas["hora"], y=df_horas["total"], marker_color=_COLOR_PRIMARIO, text=[format_cop(v) for v in df_horas["total"]]))
+        fig.update_layout(yaxis_tickprefix="$", yaxis_tickformat=",.0f", showlegend=False)
+        st.plotly_chart(fig, use_container_width=True, key="hoy_ventas_por_hora")
 
-    st.subheader("Por método de pago")
-    st.dataframe(pd.DataFrame(kpis["por_metodo_pago"]), use_container_width=True, hide_index=True, key="hoy_por_metodo_pago")
-    st.metric("Flujo de caja (sin 'Cambio')", format_cop(kpis["flujo_caja"]))
+    with card(acento="superior"):
+        titulo_seccion("Por método de pago", centrado=False)
+        st.dataframe(pd.DataFrame(kpis["por_metodo_pago"]), use_container_width=True, hide_index=True, key="hoy_por_metodo_pago")
+        st.metric("Flujo de caja (sin 'Cambio')", format_cop(kpis["flujo_caja"]))
 
     colc, cold = st.columns(2)
     with colc:
-        st.subheader("Por canal")
-        st.dataframe(pd.DataFrame(kpis["por_canal"]), use_container_width=True, hide_index=True, key="hoy_por_canal")
+        with card(acento="superior"):
+            titulo_seccion("Por canal", centrado=False)
+            st.dataframe(pd.DataFrame(kpis["por_canal"]), use_container_width=True, hide_index=True, key="hoy_por_canal")
     with cold:
-        st.subheader("Por categoría")
-        st.dataframe(pd.DataFrame(kpis["por_categoria"]), use_container_width=True, hide_index=True, key="hoy_por_categoria")
+        with card(acento="superior"):
+            titulo_seccion("Por categoría", centrado=False)
+            st.dataframe(pd.DataFrame(kpis["por_categoria"]), use_container_width=True, hide_index=True, key="hoy_por_categoria")
 
-    st.subheader("Top 10 por unidades")
-    st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades"), use_container_width=True, key="hoy_top_unidades")
+    with card(acento="superior"):
+        titulo_seccion("Top 10 por unidades", centrado=False)
+        st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades"), use_container_width=True, key="hoy_top_unidades")
     if tiene_completo and kpis.get("por_ganancia"):
-        st.subheader("Top 10 por ganancia")
-        st.plotly_chart(_grafica_top(kpis["por_ganancia"], "ganancia", "dinero", "Top 10 por ganancia"), use_container_width=True, key="hoy_top_ganancia")
+        with card(acento="superior"):
+            titulo_seccion("Top 10 por ganancia", centrado=False)
+            st.plotly_chart(_grafica_top(kpis["por_ganancia"], "ganancia", "dinero", "Top 10 por ganancia"), use_container_width=True, key="hoy_top_ganancia")
 
-    st.subheader("Ventas del día")
-    st.dataframe(pd.DataFrame(kpis["ventas_del_dia"]), use_container_width=True, hide_index=True, key="hoy_ventas_del_dia")
+    with card(acento="superior"):
+        titulo_seccion("Ventas del día", centrado=False)
+        st.dataframe(pd.DataFrame(kpis["ventas_del_dia"]), use_container_width=True, hide_index=True, key="hoy_ventas_del_dia")
 
     if tiene_capacidad(rol, "cuadre_caja"):
-        st.subheader("Cuadre de caja")
-        with st.form("form_cuadre_caja"):
-            base_inicial = st.number_input("Base inicial", min_value=0, step=1000, value=0)
-            efectivo_contado = st.number_input("Efectivo contado", min_value=0, step=1000, value=0)
-            nota = st.text_area("Nota", value="")
-            enviado = st.form_submit_button("Registrar cuadre")
-        if enviado:
-            try:
-                resultado = registrar_cuadre_caja(
-                    ctx.storage,
-                    rol,
-                    hoy_local,
-                    "principal",
-                    int(base_inicial),
-                    int(efectivo_contado),
-                    nota,
-                    usuario_id=getattr(ctx.usuario, "id", None),
-                )
-                st.success(
-                    f"Cuadre registrado. Esperado: {format_cop(resultado['efectivo_esperado'])} · "
-                    f"Diferencia: {format_cop(resultado['diferencia'])}"
-                )
-                ctx.rerun()
-            except PermisoDenegadoError as exc:
-                st.error(str(exc))
+        with card(acento="izquierdo"):
+            titulo_seccion("Cuadre de caja", centrado=False)
+            with st.form("form_cuadre_caja"):
+                base_inicial = st.number_input("Base inicial", min_value=0, step=1000, value=0)
+                efectivo_contado = st.number_input("Efectivo contado", min_value=0, step=1000, value=0)
+                nota = st.text_area("Nota", value="")
+                enviado = st.form_submit_button("Registrar cuadre", type="primary", icon=":material/point_of_sale:")
+            if enviado:
+                try:
+                    resultado = registrar_cuadre_caja(
+                        ctx.storage,
+                        rol,
+                        hoy_local,
+                        "principal",
+                        int(base_inicial),
+                        int(efectivo_contado),
+                        nota,
+                        usuario_id=getattr(ctx.usuario, "id", None),
+                    )
+                    # Dos montos "$ ..." (R1) en el mismo texto markdown
+                    # pueden leerse como un bloque de LaTeX ("$...$") y
+                    # mostrar "**"/texto crudo en vez del número (capa
+                    # visual) — se escapa el signo antes de mostrarlo.
+                    esperado_md = format_cop(resultado["efectivo_esperado"]).replace("$", r"\$")
+                    diferencia_md = format_cop(resultado["diferencia"]).replace("$", r"\$")
+                    st.success(f"Cuadre registrado. Esperado: {esperado_md} · Diferencia: {diferencia_md}")
+                    ctx.rerun()
+                except PermisoDenegadoError as exc:
+                    st.error(str(exc))
 
     _boton_excel(ctx, "dia", hoy_local, rol, usuario_id)
 
@@ -183,16 +206,18 @@ def _render_semana(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str 
     kpis = kpis_semana(ctx.storage, hoy_local, rol, usuario_id=usuario_id)
     _kpi_row(kpis, tiene_completo)
 
-    st.plotly_chart(_grafica_barras(kpis["barras_por_dia"], "Ventas netas por día (lunes → hoy)"), use_container_width=True, key="semana_barras_por_dia")
+    with card(acento="superior"):
+        titulo_seccion("Ventas netas por día (lunes → hoy)", centrado=False)
+        st.plotly_chart(_grafica_barras(kpis["barras_por_dia"], "Ventas netas por día (lunes → hoy)"), use_container_width=True, key="semana_barras_por_dia")
 
-    st.metric(
-        "vs. semana anterior (mismos días transcurridos)",
-        format_cop(kpis["comparativo_semana_anterior"]["actual"]),
-        delta=kpis["comparativo_semana_anterior"]["variacion_pct"],
+    kpi_card(
+        "vs. semana anterior (mismos días transcurridos)", format_cop(kpis["comparativo_semana_anterior"]["actual"]),
+        delta=kpis["comparativo_semana_anterior"]["variacion_pct"], icono="calendar_view_week",
     )
 
-    st.subheader("Top productos de la semana")
-    st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top por unidades"), use_container_width=True, key="semana_top_unidades")
+    with card(acento="superior"):
+        titulo_seccion("Top productos de la semana", centrado=False)
+        st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top por unidades"), use_container_width=True, key="semana_top_unidades")
 
     _boton_excel(ctx, "semana", hoy_local, rol, usuario_id)
 
@@ -201,41 +226,48 @@ def _render_mes(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
     kpis = kpis_mes(ctx.storage, hoy_local, rol, usuario_id=usuario_id)
     _kpi_row(kpis, tiene_completo)
 
-    st.plotly_chart(_grafica_barras(kpis["barras_por_dia"], "Ventas netas por día (día 1 → hoy)"), use_container_width=True, key="mes_barras_por_dia")
+    with card(acento="superior"):
+        titulo_seccion("Ventas netas por día (día 1 → hoy)", centrado=False)
+        st.plotly_chart(_grafica_barras(kpis["barras_por_dia"], "Ventas netas por día (día 1 → hoy)"), use_container_width=True, key="mes_barras_por_dia")
 
     colc, cold = st.columns(2)
     with colc:
-        st.subheader("Por categoría")
-        st.dataframe(pd.DataFrame(kpis["por_categoria"]), use_container_width=True, hide_index=True, key="mes_por_categoria")
+        with card(acento="superior"):
+            titulo_seccion("Por categoría", centrado=False)
+            st.dataframe(pd.DataFrame(kpis["por_categoria"]), use_container_width=True, hide_index=True, key="mes_por_categoria")
     with cold:
-        st.subheader("Por canal")
-        st.dataframe(pd.DataFrame(kpis["por_canal"]), use_container_width=True, hide_index=True, key="mes_por_canal")
+        with card(acento="superior"):
+            titulo_seccion("Por canal", centrado=False)
+            st.dataframe(pd.DataFrame(kpis["por_canal"]), use_container_width=True, hide_index=True, key="mes_por_canal")
 
-    st.subheader("Top 10 por unidades")
-    st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades"), use_container_width=True, key="mes_top_unidades")
+    with card(acento="superior"):
+        titulo_seccion("Top 10 por unidades", centrado=False)
+        st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades"), use_container_width=True, key="mes_top_unidades")
     if tiene_completo and kpis.get("por_ganancia"):
-        st.subheader("Top 10 por ganancia")
-        st.plotly_chart(_grafica_top(kpis["por_ganancia"], "ganancia", "dinero", "Top 10 por ganancia"), use_container_width=True, key="mes_top_ganancia")
+        with card(acento="superior"):
+            titulo_seccion("Top 10 por ganancia", centrado=False)
+            st.plotly_chart(_grafica_top(kpis["por_ganancia"], "ganancia", "dinero", "Top 10 por ganancia"), use_container_width=True, key="mes_top_ganancia")
 
-    st.metric(
-        "vs. mes anterior (mismo día transcurrido)",
-        format_cop(kpis["comparativo_mes_anterior"]["actual"]),
-        delta=kpis["comparativo_mes_anterior"]["variacion_pct"],
+    kpi_card(
+        "vs. mes anterior (mismo día transcurrido)", format_cop(kpis["comparativo_mes_anterior"]["actual"]),
+        delta=kpis["comparativo_mes_anterior"]["variacion_pct"], icono="calendar_month",
     )
     st.caption(f"Proyección de cierre (estimado): {format_cop(kpis['proyeccion_cierre']['valor'])}")
 
     if tiene_completo:
-        st.subheader("Inventario")
-        inv = kpis["valor_inventario"]
-        colx, coly, colz, colw = st.columns(4)
-        colx.metric("Valor al costo", format_cop(inv["al_costo"]))
-        coly.metric("Valor al precio", format_cop(inv["al_precio"]))
-        bajo = kpis["productos_bajo_minimo_y_agotados"]
-        colz.metric("Bajo mínimo", bajo["bajo_minimo"])
-        colw.metric("Agotados", bajo["agotados"])
+        with card(acento="superior"):
+            titulo_seccion("Inventario", centrado=False)
+            inv = kpis["valor_inventario"]
+            colx, coly, colz, colw = st.columns(4)
+            colx.metric("Valor al costo", format_cop(inv["al_costo"]))
+            coly.metric("Valor al precio", format_cop(inv["al_precio"]))
+            bajo = kpis["productos_bajo_minimo_y_agotados"]
+            colz.metric("Bajo mínimo", bajo["bajo_minimo"])
+            colw.metric("Agotados", bajo["agotados"])
 
-    st.subheader("Stock sin ventas en 30 días")
-    st.dataframe(pd.DataFrame(kpis["stock_sin_ventas_30_dias"]), use_container_width=True, hide_index=True, key="mes_stock_sin_ventas")
+    with card(acento="superior"):
+        titulo_seccion("Stock sin ventas en 30 días", centrado=False)
+        st.dataframe(pd.DataFrame(kpis["stock_sin_ventas_30_dias"]), use_container_width=True, hide_index=True, key="mes_stock_sin_ventas")
 
     _boton_excel(ctx, "mes", hoy_local, rol, usuario_id)
 
@@ -253,7 +285,7 @@ def _render_meses_anteriores(ctx: ViewContext, hoy_local: date, rol: str) -> Non
     etiquetas = [d.strftime("%Y-%m") for d in opciones]
     seleccion = st.selectbox("Mes", etiquetas) if etiquetas else None
     if not seleccion:
-        st.info("No hay meses anteriores para mostrar.")
+        estado_vacio("No hay meses anteriores para mostrar.", icono="calendar_month")
         return
 
     year, month = (int(x) for x in seleccion.split("-"))
@@ -264,10 +296,11 @@ def _render_meses_anteriores(ctx: ViewContext, hoy_local: date, rol: str) -> Non
         return
 
     if kpis["tickets"] == 0:
-        st.info(f"No hay datos archivados para {seleccion}.")
+        estado_vacio(f"No hay datos archivados para {seleccion}.", icono="calendar_month")
         return
 
     tiene_completo = tiene_capacidad(rol, "ver_analisis_completo")
     _kpi_row(kpis, tiene_completo)
-    st.subheader("Top 10 por unidades")
-    st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades"), use_container_width=True, key="anteriores_top_unidades")
+    with card(acento="superior"):
+        titulo_seccion("Top 10 por unidades", centrado=False)
+        st.plotly_chart(_grafica_top(kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades"), use_container_width=True, key="anteriores_top_unidades")

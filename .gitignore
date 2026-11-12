@@ -27,6 +27,11 @@ env/
 htmlcov/
 .ruff_cache/
 
+# Logs de streamlit (server local para verificación visual, A5)
+streamlit_out.log
+streamlit_err.log
+*.log
+
 # Editor / OS
 .vscode/
 .idea/

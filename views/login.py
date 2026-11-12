@@ -12,18 +12,19 @@ import streamlit as st
 
 from core import auth
 from core.timeutil import now_utc, to_iso_utc
-from core.ui import encabezado_marca, mensaje_error_amable, pie_pagina
+from core.ui import card, encabezado_marca, mensaje_error_amable, pie_pagina, titulo_seccion
 from views import ViewContext
 
 
 def render(ctx: ViewContext) -> None:
-    encabezado_marca()
-    st.subheader("Ingresar")
+    encabezado_marca(subtitulo="Inventario y ventas")
 
-    with st.form("formulario_login", clear_on_submit=False):
-        usuario = st.text_input("Usuario")
-        password = st.text_input("Contraseña", type="password")
-        entrar = st.form_submit_button("Entrar", use_container_width=True)
+    with card(acento="superior", key="ot-card-login"):
+        titulo_seccion("Ingresar")
+        with st.form("formulario_login", clear_on_submit=False):
+            usuario = st.text_input("Usuario", icon=":material/person:")
+            password = st.text_input("Contraseña", type="password", icon=":material/lock:")
+            entrar = st.form_submit_button("Entrar", use_container_width=True, type="primary")
 
     if entrar:
         if not usuario or not password:

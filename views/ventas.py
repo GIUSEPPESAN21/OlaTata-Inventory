@@ -14,6 +14,7 @@ from core.money import format_cop
 from core.permissions import PermisoDenegadoError, tiene_capacidad
 from core.returns import DevolucionInvalidaError, VentaNoEncontradaError, anular_venta, registrar_devolucion_cambio
 from core.timeutil import local_date, now_utc
+from core.ui import card, chip_estado, encabezado_pagina, estado_vacio
 from views import ViewContext
 
 _METODOS_LABEL = {
@@ -29,18 +30,19 @@ def render(ctx: ViewContext) -> None:
     storage = ctx.storage
     usuario = ctx.usuario
 
-    st.subheader("Ventas")
+    encabezado_pagina("Ventas", "Historial, devoluciones y anulaciones", icono="receipt_long")
 
-    col1, col2 = st.columns(2)
-    # R2: "hoy" SIEMPRE en America/Bogota, nunca date.today() (hora del
-    # servidor, típicamente UTC en despliegues cloud — el defecto §2.a).
-    hoy = local_date(now_utc())
-    desde = col1.date_input("Desde", value=hoy - timedelta(days=7), key="ventas_desde")
-    hasta = col2.date_input("Hasta", value=hoy, key="ventas_hasta")
+    with card(acento="superior"):
+        col1, col2 = st.columns(2)
+        # R2: "hoy" SIEMPRE en America/Bogota, nunca date.today() (hora
+        # del servidor, típicamente UTC en despliegues cloud — §2.a).
+        hoy = local_date(now_utc())
+        desde = col1.date_input("Desde", value=hoy - timedelta(days=7), key="ventas_desde")
+        hasta = col2.date_input("Hasta", value=hoy, key="ventas_hasta")
 
     ventas_df = storage.read_sheet(schema.VENTAS)
     if ventas_df.empty:
-        st.info("Todavía no se ha registrado ninguna venta.")
+        estado_vacio("Todavía no se ha registrado ninguna venta.", icono="receipt_long")
         return
 
     ventas_df = ventas_df[
@@ -51,7 +53,7 @@ def render(ctx: ViewContext) -> None:
         ventas_df = ventas_df[ventas_df["vendedor_id"] == usuario.id]
 
     if ventas_df.empty:
-        st.info("No hay ventas en ese rango de fechas.")
+        estado_vacio("No hay ventas en ese rango de fechas.", icono="date_range")
         return
 
     ventas_df = ventas_df.sort_values("fecha_hora_utc", ascending=False)
@@ -62,9 +64,13 @@ def render(ctx: ViewContext) -> None:
 def _fila_venta(ctx: ViewContext, venta) -> None:
     storage = ctx.storage
     usuario = ctx.usuario
-    estado_icono = "❌" if venta["estado"] == "anulada" else "✅"
-    titulo = f"{estado_icono} {venta['numero']} · {format_cop(int(venta['total']))} · {venta['fecha_local']}"
-    with st.expander(titulo):
+    anulada = venta["estado"] == "anulada"
+    titulo = f"{venta['numero']} · {format_cop(int(venta['total']))} · {venta['fecha_local']}"
+    with st.expander(titulo, icon=":material/cancel:" if anulada else ":material/check_circle:"):
+        st.markdown(
+            chip_estado("Anulada", "error") if anulada else chip_estado("Confirmada", "exito"),
+            unsafe_allow_html=True,
+        )
         st.write(f"Vendedor: {venta['vendedor_nombre']}")
         st.write(f"Canal: {venta['canal']}")
         if venta["cliente_nombre"]:
@@ -82,11 +88,11 @@ def _fila_venta(ctx: ViewContext, venta) -> None:
         col1, col2 = st.columns(2)
 
         if tiene_capacidad(usuario.rol, "anular_venta"):
-            with col1.popover("Anular venta"):
+            with col1.popover("Anular venta", icon=":material/cancel:", use_container_width=True):
                 _formulario_anulacion(ctx, venta)
 
         if tiene_capacidad(usuario.rol, "devolucion_cambio"):
-            with col2.popover("Devolución / cambio"):
+            with col2.popover("Devolución / cambio", icon=":material/keyboard_return:", use_container_width=True):
                 _formulario_devolucion(ctx, venta, items_venta)
 
 

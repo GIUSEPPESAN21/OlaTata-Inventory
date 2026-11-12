@@ -18,6 +18,7 @@ from core import costing, importer, inventory, labels_ot
 from core.money import DineroInvalidoError, format_cop
 from core.permissions import PermisoDenegadoError, requerir, tiene_capacidad
 from core.schema import SEDE_PRINCIPAL
+from core.ui import card, chip_estado, encabezado_pagina, estado_vacio, titulo_seccion
 from views import ViewContext
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ def render(ctx: ViewContext) -> None:
         st.error("No tienes permiso para ver el inventario. Esta pantalla es solo para administradores.")
         return
 
-    st.title("📦 Inventario")
+    encabezado_pagina("Inventario", "Productos, mercancía y existencias", icono="inventory_2")
 
     tabs = st.tabs(
         ["Productos", "Entrada de mercancía", "Conteo físico", "Importar inventario", "Etiquetas", "Integridad"]
@@ -64,24 +65,23 @@ def render(ctx: ViewContext) -> None:
 
 # --------------------------------------------------------------- Productos
 def _tab_productos(ctx: ViewContext, rol: str) -> None:
-    st.subheader("Productos")
-
     try:
         productos = inventory.listar_productos(ctx.storage, rol)
     except Exception as exc:  # pragma: no cover - defensivo
         st.error(_mensaje_amigable(exc, "listar productos"))
         return
 
-    col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
-    with col1:
-        busqueda = st.text_input("Buscar por nombre o código de barras", key="inv_busqueda")
-    with col2:
-        categorias = sorted({c for c in productos["categoria"].astype(str) if c})
-        categoria = st.selectbox("Categoría", options=["(todas)"] + categorias, key="inv_categoria")
-    with col3:
-        bajo_minimo = st.checkbox("Bajo mínimo", key="inv_bajo_minimo")
-    with col4:
-        sin_stock = st.checkbox("Sin stock", key="inv_sin_stock")
+    with card(acento="superior"):
+        col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
+        with col1:
+            busqueda = st.text_input("Buscar por nombre o código de barras", key="inv_busqueda", icon=":material/search:")
+        with col2:
+            categorias = sorted({c for c in productos["categoria"].astype(str) if c})
+            categoria = st.selectbox("Categoría", options=["(todas)"] + categorias, key="inv_categoria")
+        with col3:
+            bajo_minimo = st.checkbox("Bajo mínimo", key="inv_bajo_minimo")
+        with col4:
+            sin_stock = st.checkbox("Sin stock", key="inv_sin_stock")
 
     try:
         filtrados = inventory.listar_productos(
@@ -97,41 +97,46 @@ def _tab_productos(ctx: ViewContext, rol: str) -> None:
         return
 
     if filtrados.empty:
-        st.info("No hay productos que coincidan con estos filtros. Crea uno nuevo abajo.")
+        estado_vacio(
+            "No hay productos que coincidan con estos filtros.",
+            "Crea uno nuevo con el formulario de abajo.",
+            icono="search_off",
+        )
     else:
         mostrar = filtrados.copy()
         mostrar["costo"] = mostrar["costo"].apply(lambda v: format_cop(int(v)) if pd.notna(v) else "—")
         mostrar["precio"] = mostrar["precio"].apply(lambda v: format_cop(int(v)) if pd.notna(v) else "—")
-        st.dataframe(
-            mostrar[
-                [
-                    "id",
-                    "nombre",
-                    "categoria",
-                    "stock_actual",
-                    "stock_minimo",
-                    "costo",
-                    "precio",
-                    "codigo_barras",
-                    "activo",
-                ]
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
+        with card(acento="superior"):
+            st.dataframe(
+                mostrar[
+                    [
+                        "id",
+                        "nombre",
+                        "categoria",
+                        "stock_actual",
+                        "stock_minimo",
+                        "costo",
+                        "precio",
+                        "codigo_barras",
+                        "activo",
+                    ]
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
 
-    st.divider()
-    with st.expander("➕ Nuevo producto"):
-        _form_nuevo_producto(ctx, rol)
+    with card(acento="izquierdo"):
+        with st.expander("Nuevo producto", icon=":material/add_box:"):
+            _form_nuevo_producto(ctx, rol)
 
     if not productos.empty:
-        st.divider()
-        st.markdown("#### Editar / activar / desactivar")
-        opciones = {f"{fila['id']} · {fila['nombre']}": fila["id"] for _, fila in productos.iterrows()}
-        seleccion = st.selectbox("Producto", options=list(opciones.keys()), key="inv_editar_select")
-        if seleccion:
-            producto_id = opciones[seleccion]
-            _form_editar_producto(ctx, rol, producto_id, productos)
+        with card(acento="izquierdo"):
+            titulo_seccion("Editar / activar / desactivar", centrado=False)
+            opciones = {f"{fila['id']} · {fila['nombre']}": fila["id"] for _, fila in productos.iterrows()}
+            seleccion = st.selectbox("Producto", options=list(opciones.keys()), key="inv_editar_select")
+            if seleccion:
+                producto_id = opciones[seleccion]
+                _form_editar_producto(ctx, rol, producto_id, productos)
 
 
 def _form_nuevo_producto(ctx: ViewContext, rol: str) -> None:
@@ -193,14 +198,21 @@ def _form_nuevo_producto(ctx: ViewContext, rol: str) -> None:
 def _form_editar_producto(ctx: ViewContext, rol: str, producto_id: str, productos: pd.DataFrame) -> None:
     fila = productos[productos["id"] == producto_id].iloc[0]
 
+    # Celda vacía en la hoja = NaN (float); "NaN or ''" en Python sigue
+    # siendo NaN (un float NaN es verdadero), así que el campo mostraba
+    # literalmente "nan" en vez de quedar vacío (capa visual: hallazgo de
+    # A5 durante la verificación visual, ver informe final).
+    def _texto_o_vacio(valor) -> str:
+        return "" if pd.isna(valor) else str(valor)
+
     with st.form(f"form_editar_{producto_id}"):
         nombre = st.text_input("Nombre", value=str(fila["nombre"]))
         c1, c2 = st.columns(2)
         with c1:
-            categoria = st.text_input("Categoría", value=str(fila["categoria"] or ""))
-            color = st.text_input("Color", value=str(fila["color"] or ""))
-            talla_tamano = st.text_input("Talla / tamaño", value=str(fila["talla_tamano"] or ""))
-            codigo_barras = st.text_input("Código de barras", value=str(fila["codigo_barras"] or ""))
+            categoria = st.text_input("Categoría", value=_texto_o_vacio(fila["categoria"]))
+            color = st.text_input("Color", value=_texto_o_vacio(fila["color"]))
+            talla_tamano = st.text_input("Talla / tamaño", value=_texto_o_vacio(fila["talla_tamano"]))
+            codigo_barras = st.text_input("Código de barras", value=_texto_o_vacio(fila["codigo_barras"]))
         with c2:
             costo = st.number_input("Costo", min_value=0, step=1000, value=int(fila["costo"] or 0), format="%d")
             precio = st.number_input("Precio de venta", min_value=0, step=1000, value=int(fila["precio"] or 0), format="%d")
@@ -241,12 +253,13 @@ def _form_editar_producto(ctx: ViewContext, rol: str, producto_id: str, producto
         ctx.rerun()
 
     activo = bool(fila["activo"])
+    st.markdown(chip_estado("Activo", "exito") if activo else chip_estado("Inactivo", "error", icono="pause_circle"), unsafe_allow_html=True)
     col_a, col_b = st.columns(2)
     with col_a:
-        if activo and st.button("Desactivar producto", key=f"desactivar_{producto_id}"):
+        if activo and st.button("Desactivar producto", key=f"desactivar_{producto_id}", icon=":material/visibility_off:"):
             _cambiar_estado(ctx, rol, producto_id, activo=False)
     with col_b:
-        if not activo and st.button("Reactivar producto", key=f"activar_{producto_id}"):
+        if not activo and st.button("Reactivar producto", key=f"activar_{producto_id}", icon=":material/visibility:"):
             _cambiar_estado(ctx, rol, producto_id, activo=True)
 
 
@@ -268,7 +281,7 @@ def _cambiar_estado(ctx: ViewContext, rol: str, producto_id: str, *, activo: boo
 
 # ----------------------------------------------------------- Entrada
 def _tab_entrada(ctx: ViewContext, rol: str) -> None:
-    st.subheader("Entrada de mercancía")
+    titulo_seccion("Entrada de mercancía")
     st.caption("Registra mercancía que llega al inventario. El costo promedio se recalcula automáticamente.")
 
     try:
@@ -278,19 +291,20 @@ def _tab_entrada(ctx: ViewContext, rol: str) -> None:
         return
 
     if productos.empty:
-        st.info("Todavía no hay productos activos. Crea uno en la pestaña 'Productos'.")
+        estado_vacio("Todavía no hay productos activos.", "Crea uno en la pestaña 'Productos'.", icono="inventory_2")
         return
 
     opciones = {f"{fila['id']} · {fila['nombre']}": fila["id"] for _, fila in productos.iterrows()}
 
-    with st.form("form_entrada_mercancia"):
-        seleccion = st.selectbox("Producto *", options=list(opciones.keys()))
-        cantidad = st.number_input("Cantidad que entra *", min_value=1, step=1, format="%d")
-        costo_unitario = st.number_input("Costo unitario de esta entrada *", min_value=0, step=1000, format="%d")
-        proveedor_id = st.text_input("Proveedor (id, opcional)")
-        documento_ref = st.text_input("Documento de referencia (factura, remisión, opcional)")
-        nota = st.text_area("Nota (opcional)")
-        enviado = st.form_submit_button("Registrar entrada", type="primary")
+    with card(acento="superior"):
+        with st.form("form_entrada_mercancia"):
+            seleccion = st.selectbox("Producto *", options=list(opciones.keys()))
+            cantidad = st.number_input("Cantidad que entra *", min_value=1, step=1, format="%d")
+            costo_unitario = st.number_input("Costo unitario de esta entrada *", min_value=0, step=1000, format="%d")
+            proveedor_id = st.text_input("Proveedor (id, opcional)")
+            documento_ref = st.text_input("Documento de referencia (factura, remisión, opcional)")
+            nota = st.text_area("Nota (opcional)")
+            enviado = st.form_submit_button("Registrar entrada", type="primary", icon=":material/move_to_inbox:")
 
     if not enviado:
         return
@@ -328,7 +342,7 @@ def _tab_entrada(ctx: ViewContext, rol: str) -> None:
 
 # ------------------------------------------------------------ Conteo físico
 def _tab_conteo(ctx: ViewContext, rol: str) -> None:
-    st.subheader("Conteo físico")
+    titulo_seccion("Conteo físico")
     st.caption("Ingresa lo que contaste; si hay diferencia con el sistema, pide un motivo y ajusta el stock.")
 
     try:
@@ -338,7 +352,7 @@ def _tab_conteo(ctx: ViewContext, rol: str) -> None:
         return
 
     if productos.empty:
-        st.info("Todavía no hay productos activos.")
+        estado_vacio("Todavía no hay productos activos.", icono="inventory_2")
         return
 
     opciones = {
@@ -346,11 +360,12 @@ def _tab_conteo(ctx: ViewContext, rol: str) -> None:
         for _, fila in productos.iterrows()
     }
 
-    with st.form("form_conteo_fisico"):
-        seleccion = st.selectbox("Producto *", options=list(opciones.keys()))
-        cantidad_contada = st.number_input("Cantidad contada *", min_value=0, step=1, format="%d")
-        motivo = st.text_area("Motivo del ajuste (obligatorio solo si hay diferencia)")
-        enviado = st.form_submit_button("Registrar conteo", type="primary")
+    with card(acento="superior"):
+        with st.form("form_conteo_fisico"):
+            seleccion = st.selectbox("Producto *", options=list(opciones.keys()))
+            cantidad_contada = st.number_input("Cantidad contada *", min_value=0, step=1, format="%d")
+            motivo = st.text_area("Motivo del ajuste (obligatorio solo si hay diferencia)")
+            enviado = st.form_submit_button("Registrar conteo", type="primary", icon=":material/fact_check:")
 
     if not enviado:
         return
@@ -393,7 +408,7 @@ def _plantilla_csv_bytes() -> bytes:
 
 
 def _tab_importar(ctx: ViewContext, rol: str) -> None:
-    st.subheader("Importar inventario inicial")
+    titulo_seccion("Importar inventario inicial")
     st.caption("Sube un Excel o CSV. Primero verás una vista previa fila por fila; nada se guarda hasta que confirmes.")
 
     st.download_button(
@@ -401,6 +416,7 @@ def _tab_importar(ctx: ViewContext, rol: str) -> None:
         data=_plantilla_csv_bytes(),
         file_name="plantilla_inventario_ola_tata.csv",
         mime="text/csv",
+        icon=":material/download:",
     )
 
     archivo = st.file_uploader("Archivo de inventario (.xlsx o .csv)", type=["xlsx", "csv"])
@@ -448,7 +464,7 @@ def _tab_importar(ctx: ViewContext, rol: str) -> None:
 
     if resultado.ok and resultado.filas_validas:
         confirmar = st.checkbox("Confirmo que revisé la vista previa y quiero importar estas filas.")
-        if st.button("Importar inventario inicial", type="primary", disabled=not confirmar):
+        if st.button("Importar inventario inicial", type="primary", disabled=not confirmar, icon=":material/upload_file:"):
             try:
                 resumen = importer.aplicar_importacion(
                     ctx.storage,
@@ -473,7 +489,7 @@ def _tab_importar(ctx: ViewContext, rol: str) -> None:
 
 # ------------------------------------------------------------- Etiquetas
 def _tab_etiquetas(ctx: ViewContext, rol: str) -> None:
-    st.subheader("Etiquetas con código de barras")
+    titulo_seccion("Etiquetas con código de barras")
 
     try:
         requerir(rol, "etiquetas")
@@ -489,14 +505,14 @@ def _tab_etiquetas(ctx: ViewContext, rol: str) -> None:
 
     con_codigo = productos[productos["codigo_barras"].astype(str).str.strip() != ""]
     if con_codigo.empty:
-        st.info("Ningún producto activo tiene código de barras asignado todavía.")
+        estado_vacio("Ningún producto activo tiene código de barras asignado todavía.", icono="qr_code")
         return
 
     opciones = {f"{fila['id']} · {fila['nombre']}": fila["id"] for _, fila in con_codigo.iterrows()}
     seleccionados = st.multiselect("Productos a imprimir", options=list(opciones.keys()))
     incluir_precio = st.checkbox("Incluir precio en la etiqueta", value=True)
 
-    if st.button("Generar PDF de etiquetas", type="primary", disabled=not seleccionados):
+    if st.button("Generar PDF de etiquetas", type="primary", disabled=not seleccionados, icon=":material/qr_code_2:"):
         filas = con_codigo[con_codigo["id"].isin([opciones[s] for s in seleccionados])]
         datos = [
             {
@@ -524,10 +540,10 @@ def _tab_etiquetas(ctx: ViewContext, rol: str) -> None:
 
 # ----------------------------------------------------------- Integridad
 def _tab_integridad(ctx: ViewContext, rol: str) -> None:
-    st.subheader("Verificar integridad del inventario")
+    titulo_seccion("Verificar integridad del inventario")
     st.caption("Recalcula el stock de cada producto desde el kardex de movimientos y lo compara con el sistema.")
 
-    if st.button("Verificar integridad ahora", type="primary"):
+    if st.button("Verificar integridad ahora", type="primary", icon=":material/fact_check:"):
         try:
             diferencias = inventory.verificar_integridad(ctx.storage, rol)
         except PermisoDenegadoError:

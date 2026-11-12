@@ -11,42 +11,46 @@ import streamlit as st
 
 from core import auth
 from core.ui import (
+    card,
     encabezado_marca,
     generar_password_temporal,
     mensaje_error_amable,
     pie_pagina,
+    titulo_seccion,
     validar_password,
 )
 from views import ViewContext
 
 
 def render(ctx: ViewContext) -> None:
-    encabezado_marca()
-    st.subheader("Bienvenido — primer arranque")
-    st.write(
-        "Todavía no hay ningún usuario creado. Crea la cuenta de "
-        "administrador del negocio para empezar."
-    )
+    encabezado_marca(subtitulo="Primer arranque")
 
     if "clave_temporal_sugerida" not in st.session_state:
         st.session_state["clave_temporal_sugerida"] = generar_password_temporal()
 
-    with st.form("formulario_primer_arranque"):
-        nombre = st.text_input("Tu nombre completo")
-        usuario = st.text_input("Usuario con el que vas a ingresar")
-        modo_clave = st.radio(
-            "Contraseña temporal",
-            options=["Usar una generada automáticamente", "Elegir una propia"],
-            index=0,
+    with card(acento="superior", key="ot-card-primer-arranque"):
+        titulo_seccion("Bienvenido")
+        st.write(
+            "Todavía no hay ningún usuario creado. Crea la cuenta de "
+            "administrador del negocio para empezar."
         )
-        if modo_clave == "Usar una generada automáticamente":
-            st.code(st.session_state["clave_temporal_sugerida"])
-            clave_elegida = st.session_state["clave_temporal_sugerida"]
-        else:
-            clave_elegida = st.text_input("Contraseña temporal", type="password")
 
-        st.caption("Se te pedirá cambiarla la primera vez que ingreses.")
-        crear = st.form_submit_button("Crear administrador", use_container_width=True)
+        with st.form("formulario_primer_arranque"):
+            nombre = st.text_input("Tu nombre completo", icon=":material/badge:")
+            usuario = st.text_input("Usuario con el que vas a ingresar", icon=":material/person:")
+            modo_clave = st.radio(
+                "Contraseña temporal",
+                options=["Usar una generada automáticamente", "Elegir una propia"],
+                index=0,
+            )
+            if modo_clave == "Usar una generada automáticamente":
+                st.code(st.session_state["clave_temporal_sugerida"])
+                clave_elegida = st.session_state["clave_temporal_sugerida"]
+            else:
+                clave_elegida = st.text_input("Contraseña temporal", type="password", icon=":material/lock:")
+
+            st.caption("Se te pedirá cambiarla la primera vez que ingreses.")
+            crear = st.form_submit_button("Crear administrador", use_container_width=True, type="primary")
 
     if crear:
         errores = []

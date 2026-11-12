@@ -18,6 +18,7 @@ from core.excel_safe import TextoInvalidoError, excel_safe
 from core.permissions import PermisoDenegadoError, requerir
 from core.timeutil import now_utc, parse_iso_utc, to_iso_utc
 from core.ui import (
+    card,
     chip_estado,
     confirmacion_coincide,
     encabezado_pagina,
@@ -26,6 +27,7 @@ from core.ui import (
     generar_password_temporal,
     mensaje_error_amable,
     resumen_estado_sync,
+    titulo_seccion,
     validar_password,
 )
 from views import ViewContext
@@ -53,7 +55,7 @@ def render(ctx: ViewContext) -> None:
         st.error(f"No tienes permiso para ver Ajustes: {exc}")
         return
 
-    encabezado_pagina("Ajustes", "Negocio, usuarios, sincronización y respaldo.")
+    encabezado_pagina("Ajustes", "Negocio, usuarios, sincronización y respaldo.", icono="settings")
     tabs = st.tabs(
         ["Negocio", "Usuarios", "Sincronización", "Respaldo", "Integridad", "Cierre de mes"]
     )
@@ -92,32 +94,34 @@ def _tab_negocio(ctx: ViewContext) -> None:
 
     metodos_seleccionados = [m for m in metodos_actual.split(_SEP) if m in schema.METODOS_PAGO]
 
-    with st.form("formulario_negocio"):
-        nombre = st.text_input("Nombre del negocio", value=nombre_actual)
-        whatsapp = st.text_input("Teléfono WhatsApp", value=whatsapp_actual)
-        mensaje = st.text_area("Mensaje de recibo", value=mensaje_actual, height=100)
-        categorias_texto = st.text_area(
-            "Categorías de producto (una por línea)",
-            value=categorias_actual.replace(_SEP, "\n"),
-            height=100,
-        )
-        metodos = st.multiselect(
-            "Métodos de pago activos",
-            options=sorted(schema.METODOS_PAGO),
-            default=metodos_seleccionados,
-        )
-        try:
-            minutos_valor_inicial = int(minutos_actual)
-        except (TypeError, ValueError):
-            minutos_valor_inicial = auth.SESION_MINUTOS_DEFAULT
-        minutos = st.number_input(
-            "Minutos de inactividad antes de cerrar sesión",
-            min_value=5,
-            max_value=24 * 60,
-            value=minutos_valor_inicial,
-            step=5,
-        )
-        guardar = st.form_submit_button("Guardar", use_container_width=True)
+    with card(acento="superior"):
+        titulo_seccion("Datos del negocio")
+        with st.form("formulario_negocio"):
+            nombre = st.text_input("Nombre del negocio", value=nombre_actual, icon=":material/storefront:")
+            whatsapp = st.text_input("Teléfono WhatsApp", value=whatsapp_actual, icon=":material/call:")
+            mensaje = st.text_area("Mensaje de recibo", value=mensaje_actual, height=100)
+            categorias_texto = st.text_area(
+                "Categorías de producto (una por línea)",
+                value=categorias_actual.replace(_SEP, "\n"),
+                height=100,
+            )
+            metodos = st.multiselect(
+                "Métodos de pago activos",
+                options=sorted(schema.METODOS_PAGO),
+                default=metodos_seleccionados,
+            )
+            try:
+                minutos_valor_inicial = int(minutos_actual)
+            except (TypeError, ValueError):
+                minutos_valor_inicial = auth.SESION_MINUTOS_DEFAULT
+            minutos = st.number_input(
+                "Minutos de inactividad antes de cerrar sesión",
+                min_value=5,
+                max_value=24 * 60,
+                value=minutos_valor_inicial,
+                step=5,
+            )
+            guardar = st.form_submit_button("Guardar", use_container_width=True, type="primary", icon=":material/save:")
 
     if not guardar:
         return
@@ -158,37 +162,38 @@ def _tab_negocio(ctx: ViewContext) -> None:
 # ------------------------------------------------------------- usuarios
 def _tab_usuarios(ctx: ViewContext) -> None:
     storage = ctx.storage
-    st.subheader("Crear usuario")
     if "ajustes_clave_sugerida" not in st.session_state:
         st.session_state["ajustes_clave_sugerida"] = generar_password_temporal()
 
-    with st.form("formulario_crear_usuario"):
-        nombre = st.text_input("Nombre completo")
-        usuario_nuevo = st.text_input("Usuario")
-        rol = st.selectbox(
-            "Rol",
-            options=["vendedor", "admin"],
-            format_func=lambda r: "Administrador" if r == "admin" else "Vendedor",
-        )
-        usar_generada = st.checkbox("Usar clave temporal generada", value=True)
-        if usar_generada:
-            st.code(st.session_state["ajustes_clave_sugerida"])
-            clave = st.session_state["ajustes_clave_sugerida"]
-        else:
-            clave = st.text_input("Clave temporal", type="password")
-        crear = st.form_submit_button("Crear usuario", use_container_width=True)
+    with card(acento="superior"):
+        titulo_seccion("Crear usuario")
+        with st.form("formulario_crear_usuario"):
+            nombre = st.text_input("Nombre completo", icon=":material/badge:")
+            usuario_nuevo = st.text_input("Usuario", icon=":material/person:")
+            rol = st.selectbox(
+                "Rol",
+                options=["vendedor", "admin"],
+                format_func=lambda r: "Administrador" if r == "admin" else "Vendedor",
+            )
+            usar_generada = st.checkbox("Usar clave temporal generada", value=True)
+            if usar_generada:
+                st.code(st.session_state["ajustes_clave_sugerida"])
+                clave = st.session_state["ajustes_clave_sugerida"]
+            else:
+                clave = st.text_input("Clave temporal", type="password", icon=":material/lock:")
+            crear = st.form_submit_button("Crear usuario", use_container_width=True, type="primary", icon=":material/person_add:")
 
     if crear:
         _crear_usuario(ctx, nombre, usuario_nuevo, rol, clave)
 
-    st.divider()
-    st.subheader("Usuarios existentes")
-    df = storage.read_sheet(schema.USUARIOS)
-    if df.empty:
-        estado_vacio("Todavía no hay usuarios creados.")
-        return
-    for _, fila in df.iterrows():
-        _fila_usuario(ctx, fila)
+    with card(acento="izquierdo"):
+        titulo_seccion("Usuarios existentes", centrado=False)
+        df = storage.read_sheet(schema.USUARIOS)
+        if df.empty:
+            estado_vacio("Todavía no hay usuarios creados.", icono="group")
+        else:
+            for _, fila in df.iterrows():
+                _fila_usuario(ctx, fila)
 
 
 def _crear_usuario(ctx: ViewContext, nombre: str, usuario_nuevo: str, rol: str, clave: str) -> None:
@@ -292,36 +297,38 @@ def _tab_sincronizacion(ctx: ViewContext) -> None:
         st.error(f"No tienes permiso para ver esto: {exc}")
         return
 
-    status = ctx.storage.sync_status()
-    resumen = resumen_estado_sync(status)
-    mostrar = {"error": st.error, "alerta": st.warning, "exito": st.success}.get(resumen["categoria"], st.info)
-    mostrar(resumen["texto"])
+    with card(acento="superior"):
+        titulo_seccion("Estado de sincronización")
+        status = ctx.storage.sync_status()
+        resumen = resumen_estado_sync(status)
+        mostrar = {"error": st.error, "alerta": st.warning, "exito": st.success}.get(resumen["categoria"], st.info)
+        mostrar(resumen["texto"])
 
-    ultimo_sync = getattr(status, "ultimo_sync_utc", None)
-    if ultimo_sync:
-        try:
-            st.caption(f"Último sincronizado: {formatear_fecha_hora_local(parse_iso_utc(ultimo_sync))}")
-        except Exception:
-            pass
-    ultimo_error = getattr(status, "ultimo_error", None)
-    if ultimo_error:
-        st.caption(f"Último error técnico: {ultimo_error}")
+        ultimo_sync = getattr(status, "ultimo_sync_utc", None)
+        if ultimo_sync:
+            try:
+                st.caption(f"Último sincronizado: {formatear_fecha_hora_local(parse_iso_utc(ultimo_sync))}")
+            except Exception:
+                pass
+        ultimo_error = getattr(status, "ultimo_error", None)
+        if ultimo_error:
+            st.caption(f"Último error técnico: {ultimo_error}")
 
-    if getattr(status, "en_conflicto", False):
-        st.warning(
-            "Hay una versión en conflicto entre lo guardado en este equipo "
-            "(local) y lo que hay en GitHub (remota)."
-        )
-        st.info(
-            "**Pendiente documentado (M1):** `core.storage` todavía no "
-            "expone una función para elegir y aplicar una de las dos "
-            "versiones byte a byte — aquí solo se deja constancia de cuál "
-            "se prefiere. Pídele al equipo técnico completar la "
-            "resolución manualmente mientras esa función no exista."
-        )
-        eleccion = st.radio("¿Qué versión prefieres conservar?", ["Local (este equipo)", "Remota (GitHub)"])
-        if st.button("Dejar constancia de la elección", use_container_width=True):
-            st.success(f"Elección registrada: {eleccion}. Avisa al soporte técnico para completarla.")
+        if getattr(status, "en_conflicto", False):
+            st.warning(
+                "Hay una versión en conflicto entre lo guardado en este equipo "
+                "(local) y lo que hay en GitHub (remota)."
+            )
+            st.info(
+                "**Pendiente documentado (M1):** `core.storage` todavía no "
+                "expone una función para elegir y aplicar una de las dos "
+                "versiones byte a byte — aquí solo se deja constancia de cuál "
+                "se prefiere. Pídele al equipo técnico completar la "
+                "resolución manualmente mientras esa función no exista."
+            )
+            eleccion = st.radio("¿Qué versión prefieres conservar?", ["Local (este equipo)", "Remota (GitHub)"])
+            if st.button("Dejar constancia de la elección", use_container_width=True, icon=":material/fact_check:"):
+                st.success(f"Elección registrada: {eleccion}. Avisa al soporte técnico para completarla.")
 
 
 # -------------------------------------------------------------- respaldo
@@ -337,6 +344,7 @@ def _tab_respaldo(ctx: ViewContext) -> None:
         estado_vacio(
             "Todavía no hay datos guardados para respaldar.",
             "Vuelve cuando haya al menos un producto o una venta registrada.",
+            icono="backup",
         )
         return
 
@@ -347,13 +355,16 @@ def _tab_respaldo(ctx: ViewContext) -> None:
         st.error(mensaje)
         return
 
-    st.download_button(
-        "Descargar respaldo (.xlsx)",
-        data=contenido,
-        file_name=Path(local_path).name,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-    )
+    with card(acento="superior"):
+        titulo_seccion("Respaldo")
+        st.download_button(
+            "Descargar respaldo (.xlsx)",
+            data=contenido,
+            file_name=Path(local_path).name,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            icon=":material/backup:",
+        )
 
 
 # ------------------------------------------------------------ integridad
@@ -366,17 +377,19 @@ def _tab_integridad(ctx: ViewContext) -> None:
 
     verificar = _funcion_opcional("core.inventory", "verificar_integridad")
     if verificar is None:
-        estado_vacio("Verificar integridad estará disponible cuando Inventario esté integrado.")
+        estado_vacio("Verificar integridad estará disponible cuando Inventario esté integrado.", icono="fact_check")
         return
 
-    if st.button("Verificar integridad del inventario", use_container_width=True):
-        try:
-            resultado = verificar(ctx.storage)
-        except Exception as exc:  # nunca una traza de Python visible (§6)
-            mensaje, _codigo = mensaje_error_amable(exc, contexto="verificar_integridad")
-            st.error(mensaje)
-        else:
-            st.success(str(resultado))
+    with card(acento="superior"):
+        titulo_seccion("Integridad del inventario")
+        if st.button("Verificar integridad del inventario", use_container_width=True, icon=":material/fact_check:"):
+            try:
+                resultado = verificar(ctx.storage)
+            except Exception as exc:  # nunca una traza de Python visible (§6)
+                mensaje, _codigo = mensaje_error_amable(exc, contexto="verificar_integridad")
+                st.error(mensaje)
+            else:
+                st.success(str(resultado))
 
 
 # ----------------------------------------------------------- cierre mes
@@ -389,24 +402,28 @@ def _tab_cierre_mes(ctx: ViewContext) -> None:
 
     cerrar = _funcion_opcional("core.monthly_close", "cerrar_mes")
     if cerrar is None:
-        estado_vacio("El cierre de mes estará disponible cuando ese módulo esté integrado.")
+        estado_vacio("El cierre de mes estará disponible cuando ese módulo esté integrado.", icono="event_busy")
         return
 
-    st.warning(
-        "Cerrar el mes archiva y vacía las hojas de ventas, pagos, "
-        "devoluciones, movimientos y cuadre de caja. Esta acción no se "
-        "puede deshacer."
-    )
-    confirmacion = st.text_input("Escribe CERRAR MES para confirmar")
-    confirmado = confirmacion_coincide("CERRAR MES", confirmacion)
-    if st.button("Cerrar mes", use_container_width=True, disabled=not confirmado):
-        try:
-            resultado = cerrar(ctx.storage)
-        except Exception as exc:  # nunca una traza de Python visible (§6)
-            mensaje, _codigo = mensaje_error_amable(exc, contexto="cerrar_mes")
-            st.error(mensaje)
-        else:
-            st.success(str(resultado))
+    with card(acento="superior", key="ot-card-peligro"):
+        titulo_seccion("Zona de peligro — cierre de mes")
+        st.warning(
+            "Cerrar el mes archiva y vacía las hojas de ventas, pagos, "
+            "devoluciones, movimientos y cuadre de caja. Esta acción no se "
+            "puede deshacer."
+        )
+        confirmacion = st.text_input("Escribe CERRAR MES para confirmar")
+        confirmado = confirmacion_coincide("CERRAR MES", confirmacion)
+        if st.button(
+            "Cerrar mes", use_container_width=True, disabled=not confirmado, icon=":material/lock:"
+        ):
+            try:
+                resultado = cerrar(ctx.storage)
+            except Exception as exc:  # nunca una traza de Python visible (§6)
+                mensaje, _codigo = mensaje_error_amable(exc, contexto="cerrar_mes")
+                st.error(mensaje)
+            else:
+                st.success(str(resultado))
 
 
 def _funcion_opcional(nombre_modulo: str, nombre_funcion: str):
