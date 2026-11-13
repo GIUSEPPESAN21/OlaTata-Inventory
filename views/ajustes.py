@@ -14,7 +14,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from core import auth, schema, seguridad
+from core import auth, inicio_produccion, schema, seguridad
 from core.excel_safe import TextoInvalidoError, excel_safe
 from core.permissions import MAESTRO, PermisoDenegadoError, nombre_rol, requerir, tiene_capacidad
 from core.sincronizacion import (
@@ -365,7 +365,7 @@ def _tab_datos_prueba(ctx: ViewContext) -> None:
         if datos_prueba.hay_datos_prueba(ctx.storage):
             st.markdown(chip_estado("Hay datos de prueba en la base", "alerta", icono="science"), unsafe_allow_html=True)
             st.caption(
-                "Usuarios prueba.admin y prueba.vendedor, el producto «[PRUEBA] Bolso de prueba» y sus ventas. "
+                "Usuarios prueba.admin y prueba.vendedor, los 3 productos «[PRUEBA] …» y sus ventas. "
                 "Elimínalos antes de empezar a vender de verdad: afectan las cifras de Análisis."
             )
             confirmar = st.text_input("Escribe ELIMINAR para confirmar", key="ajustes_prueba_confirmar")
@@ -384,10 +384,12 @@ def _tab_datos_prueba(ctx: ViewContext) -> None:
                     st.session_state.pop("ajustes_prueba_claves", None)
                     st.success(f"Datos de prueba eliminados ({sum(quitadas.values())} registros).")
                     ctx.rerun()
+        elif inicio_produccion.produccion_iniciada(ctx.storage):
+            st.caption("La operación real ya empezó: no se crean más datos de prueba.")
         else:
             st.caption(
-                "Crea dos usuarios de prueba (administrador y vendedor), un producto «[PRUEBA] Bolso de prueba» "
-                "con 10 unidades y una venta simulada de 2 unidades, para probar la app sin tocar datos reales."
+                "Crea dos usuarios de prueba (administrador y vendedor), 3 productos de prueba (bolso, cartera y "
+                "billetera) con stock y una venta simulada, para probar la app sin tocar datos reales."
             )
             if st.button("Crear datos de prueba", type="primary", icon=":material/science:", use_container_width=True):
                 try:
@@ -404,12 +406,65 @@ def _tab_datos_prueba(ctx: ViewContext) -> None:
         resultado = st.session_state.get("ajustes_prueba_claves")
         if resultado:
             st.success(
-                f"Listo: producto {resultado['producto_id']} y venta {resultado['venta_numero']} creados. "
+                f"Listo: productos {', '.join(resultado.get('productos', [resultado['producto_id']]))} y "
+                f"venta {resultado['venta_numero']} creados. "
                 "Anota estas claves AHORA: no se volverán a mostrar."
             )
             for usuario, clave in resultado["usuarios"].items():
                 st.markdown(f"**{md_seguro(usuario)}**")
                 st.code(clave, language=None)
+
+    _seccion_inicio_produccion(ctx)
+
+
+def _seccion_inicio_produccion(ctx: ViewContext) -> None:
+    """Limpieza ÚNICA para empezar con el inventario real (solo maestro)."""
+    with card(acento="izquierdo", key="ot-card-inicio-produccion"):
+        titulo_seccion("Empezar con el inventario real")
+        fecha = inicio_produccion.produccion_iniciada(ctx.storage)
+        if fecha:
+            try:
+                cuando = formatear_fecha_hora_local(parse_iso_utc(fecha))
+            except Exception:
+                cuando = fecha
+            st.markdown(chip_estado(f"Operación real iniciada el {cuando}", "exito", icono="verified"),
+                        unsafe_allow_html=True)
+            st.caption("Esta limpieza ya se hizo y no se puede repetir.")
+            return
+        st.caption(
+            "Cuando terminen de probar: deja la app vacía para cargar el inventario real. "
+            "Solo se puede hacer UNA vez."
+        )
+        resumen = inicio_produccion.resumen_a_borrar(ctx.storage)
+        etiquetas = {
+            "productos": "Productos", "stock": "Existencias", "movimientos": "Movimientos de inventario",
+            "ventas": "Ventas", "venta_items": "Productos vendidos", "pagos": "Pagos", "devoluciones": "Devoluciones",
+            "devolucion_items": "Productos devueltos", "proveedores": "Proveedores", "cuadre_caja": "Cuadres de caja",
+            "usuarios de prueba": "Usuarios de prueba",
+        }
+        borrar = [f"{etiquetas.get(h, h)}: {n}" for h, n in resumen.items() if n]
+        st.markdown("**Se borra:** " + (" · ".join(borrar) if borrar else "nada (la base ya está vacía)"))
+        st.markdown("**Se conserva:** usuarios reales, configuración del negocio y registro de seguridad.")
+        st.warning(
+            "Antes, descarga un respaldo (pestaña Respaldo). Bota también las etiquetas y recibos de prueba "
+            "que hayas impreso, para no confundirlos con los reales."
+        )
+        frase = st.text_input(
+            f'Escribe "{inicio_produccion.FRASE_CONFIRMACION}" para confirmar', key="ajustes_inicio_frase"
+        )
+        if st.button("Empezar con el inventario real", type="primary", icon=":material/rocket_launch:",
+                     use_container_width=True):
+            try:
+                borradas = inicio_produccion.iniciar_produccion(ctx.storage, ctx.usuario.rol, ctx.usuario.id, frase)
+            except (PermisoDenegadoError, ValueError) as exc:
+                st.error(str(exc))
+            except Exception as exc:  # nunca una traza visible
+                mensaje, _codigo = mensaje_error_amable(exc, contexto="iniciar_produccion")
+                st.error(mensaje)
+            else:
+                st.session_state.pop("ajustes_prueba_claves", None)
+                st.success(f"Listo: la app quedó limpia ({sum(borradas.values())} registros borrados). ¡A vender!")
+                ctx.rerun()
 
 
 def _alternar_activo(ctx: ViewContext, storage, fila, activo_actual: bool) -> None:

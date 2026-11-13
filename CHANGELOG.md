@@ -121,6 +121,17 @@ de la fecha.
   consolidados en `core/ui.py`, Material Symbols autoalojado). Estado
   actual de `main` en el momento de escribir esta documentación.
 
+## 3 artículos de prueba y "Empezar con el inventario real" (2026-11-13)
+
+- Los datos de prueba crean 3 productos ("[PRUEBA] Bolso tote rosa",
+  "Cartera de cuero negra", "Billetera mini dorada") con stock.
+- **Empezar con el inventario real** (`core/inicio_produccion.py`, solo
+  maestro, UNA vez): vacía productos, stock, movimientos, ventas, pagos,
+  devoluciones, proveedores y cuadres, y quita los usuarios de prueba.
+  Conserva usuarios reales, configuración y auditoría. Queda registrada la
+  fecha (`produccion_iniciada`) y desde entonces no se repite ni se crean
+  datos de prueba.
+
 ## Rol maestro, edición de usuarios y ventas, datos de prueba (2026-11-13)
 
 - **Rol "maestro"** (`core/permissions.py`): todo lo del administrador y

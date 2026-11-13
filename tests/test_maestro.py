@@ -115,7 +115,7 @@ def test_datos_de_prueba_crear_editar_venta_y_eliminar_sin_rastro(storage):
         datos_prueba.crear_datos_prueba(storage, "admin", "x")
 
     r = datos_prueba.crear_datos_prueba(storage, "maestro", maestro)
-    assert set(r["usuarios"]) == {"prueba.admin", "prueba.vendedor"}
+    assert set(r["usuarios"]) == {"prueba.admin", "prueba.vendedor"} and len(r["productos"]) == 3
     for usuario, clave in r["usuarios"].items():
         assert auth.login(storage, usuario, clave).ok
     assert datos_prueba.hay_datos_prueba(storage)
@@ -184,3 +184,52 @@ def test_eliminar_no_borra_ventas_reales_mezcladas(storage):
     with pytest.raises(ValueError, match="productos reales"):
         datos_prueba.eliminar_datos_prueba(storage, "maestro", maestro)
     assert datos_prueba.hay_datos_prueba(storage)  # no se tocó nada
+
+
+# ------------------------------------------------ inicio de la operación real
+def test_datos_de_prueba_crean_tres_productos(storage):
+    _base(storage)
+    maestro = _usuarios(storage).loc["giuseppesan", "id"]
+    r = datos_prueba.crear_datos_prueba(storage, "maestro", maestro)
+    productos = storage.read_sheet(schema.PRODUCTOS)
+    assert len(r["productos"]) == 3 and len(productos) == 3
+    assert productos["nombre"].str.startswith("[PRUEBA]").all()
+    assert set(productos["categoria"]) == {"Bolsos", "Carteras", "Billeteras"}
+    assert inventory.verificar_integridad(storage, "maestro") == []
+
+
+def test_empezar_operacion_real_solo_una_vez_y_conserva_usuarios_reales(storage):
+    from core import inicio_produccion
+
+    _base(storage)
+    maestro = _usuarios(storage).loc["giuseppesan", "id"]
+    datos_prueba.crear_datos_prueba(storage, "maestro", maestro)
+    inventory.crear_producto(storage, "maestro", nombre="Producto que se cargó probando", usuario_id=maestro,
+                             costo=1000, precio=2000, stock_inicial=1)
+    with storage.transaction() as tx:
+        tx.set_config("negocio_nombre", "Ola Tata")
+    resumen = inicio_produccion.resumen_a_borrar(storage)
+    assert resumen[schema.PRODUCTOS] == 4 and resumen["usuarios de prueba"] == 2
+
+    with pytest.raises(PermisoDenegadoError):
+        inicio_produccion.iniciar_produccion(storage, "admin", "x", "EMPEZAR DE CERO")
+    with pytest.raises(ValueError, match="escribe exactamente"):
+        inicio_produccion.iniciar_produccion(storage, "maestro", maestro, "si")
+
+    borradas = inicio_produccion.iniciar_produccion(storage, "maestro", maestro, "empezar de cero")
+    assert borradas[schema.PRODUCTOS] == 4 and borradas["usuarios de prueba"] == 2
+    for hoja in inicio_produccion.HOJAS_A_VACIAR:
+        assert storage.read_sheet(hoja).empty, hoja
+    assert sorted(storage.read_sheet(schema.USUARIOS)["usuario"]) == ["ISA", "giuseppesan", "socia"]
+    assert storage.get_config("negocio_nombre") == "Ola Tata"  # la configuración se conserva
+    assert inicio_produccion.produccion_iniciada(storage)
+    assert "iniciar_produccion" in set(seguridad.eventos_recientes(storage, "maestro")["accion"])
+
+    with pytest.raises(ValueError, match="ya se hizo"):  # NUNCA dos veces
+        inicio_produccion.iniciar_produccion(storage, "maestro", maestro, "EMPEZAR DE CERO")
+    with pytest.raises(ValueError, match="operación real"):  # ni más datos de prueba
+        datos_prueba.crear_datos_prueba(storage, "maestro", maestro)
+    # y la app sigue funcionando normal: se carga el inventario real
+    real = inventory.crear_producto(storage, "maestro", nombre="Bolso real", usuario_id=maestro,
+                                    costo=1000, precio=2000, stock_inicial=3)
+    assert real["id"] and inventory.verificar_integridad(storage, "maestro") == []

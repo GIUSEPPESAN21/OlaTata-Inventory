@@ -38,6 +38,9 @@ CLAVES_OPERACION = frozenset(
         # Perfil del rollo de etiquetas (JSON de core.etiquetas.PerfilEtiqueta):
         # medidas, etiquetas por fila, separaciones y dpi. Inventario -> Etiquetas.
         "etiquetas_perfil",
+        # Fecha ISO (UTC) de la limpieza única "Empezar con el inventario
+        # real" (core/inicio_produccion.py). Si existe, no se repite.
+        "produccion_iniciada",
     }
 )
 

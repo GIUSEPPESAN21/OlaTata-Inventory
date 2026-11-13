@@ -88,7 +88,9 @@ def requerir(rol: str, capacidad: str) -> None:
 
 # Maestro = TODO lo del administrador y del vendedor (calculado, así nunca
 # se queda atrás si se agrega una capacidad nueva) + sus exclusivas.
-CAPACIDADES_EXCLUSIVAS_MAESTRO = frozenset({"editar_usuarios", "editar_venta", "datos_prueba"})
+CAPACIDADES_EXCLUSIVAS_MAESTRO = frozenset(
+    {"editar_usuarios", "editar_venta", "datos_prueba", "iniciar_produccion"}
+)
 CAPABILITIES[MAESTRO] = CAPABILITIES[ADMIN] | CAPABILITIES[VENDEDOR] | CAPACIDADES_EXCLUSIVAS_MAESTRO
 
 # Roles que cuentan como "administrador" (p.ej. para no dejar el negocio sin

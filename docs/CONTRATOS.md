@@ -171,6 +171,7 @@ verdad hoy.
 | `telefono_whatsapp` | `scripts/seed_db.py` (ninguna vista la escribe hoy — ver hallazgo abajo) | `views/vender.py` (enlace de WhatsApp del recibo) | dígitos, con o sin `+`/espacios |
 | `cierre::progreso` | `core/monthly_close.py` (en cada paso del cierre) | solo informativo para un admin; la reanudación NUNCA depende de esta clave, sino del estado observable (`ultimo_mes_cerrado` + releer lo archivado) | JSON `{year, month, paso, archivo, sha256}` |
 | `etiquetas_perfil` | Inventario → Etiquetas (`core.etiquetas.guardar_perfil`, solo admin) | `core.etiquetas.cargar_perfil` (si falta o está dañado: 3 por fila · 32 × 25 mm) | JSON `{nombre, ancho_mm, alto_mm, columnas, separacion_mm, margen_izq_mm, gap_vertical_mm, dpi}` |
+| `produccion_iniciada` | `core.inicio_produccion.iniciar_produccion` (solo maestro, una vez) | `core.inicio_produccion`, `core.datos_prueba` (no crea datos de prueba si existe) | ISO-8601 UTC |
 
 **Hallazgo (no corregido aquí; lo cierra quien edite `views/ajustes.py` o
 `views/vender.py`):** Ajustes guarda el WhatsApp del negocio en

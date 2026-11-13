@@ -177,16 +177,17 @@ GUIAS: dict[str, Guia] = {
         ),
     ),
     "ajustes_datos_prueba": Guia(
-        "Datos de prueba (solo maestro)",
+        "Datos de prueba e inicio real (solo maestro)",
         (
-            "«Crear datos de prueba» agrega prueba.admin, prueba.vendedor, un producto «[PRUEBA] Bolso de prueba» "
-            "y una venta simulada de 2 unidades.",
+            "«Crear datos de prueba» agrega prueba.admin, prueba.vendedor, 3 productos «[PRUEBA] …» "
+            "(bolso, cartera y billetera) y una venta simulada.",
             "Anota las dos claves que aparecen: se muestran una sola vez.",
-            "Cierra sesión y entra con cada usuario de prueba para ver qué puede hacer cada rol.",
-            "Al terminar, escribe ELIMINAR y oprime «Eliminar datos de prueba»: se borra todo lo de prueba "
-            "y la base queda solo con los datos reales.",
+            "Prueba vender, editar, devolver, imprimir etiquetas… con esos productos y usuarios.",
+            "«Eliminar datos de prueba» quita solo lo de prueba, cuantas veces quieras.",
+            "Cuando vayan a cargar el inventario real: descarga un respaldo, escribe EMPEZAR DE CERO y oprime "
+            "«Empezar con el inventario real». Borra productos, ventas y movimientos, y conserva los usuarios reales.",
         ),
-        "Mientras existan, la venta de prueba suma en Análisis. Elimínalos antes de empezar a vender de verdad.",
+        "«Empezar con el inventario real» se puede hacer UNA sola vez y no se deshace desde la app.",
     ),
     "ajustes_respaldo": Guia(
         "Respaldo",

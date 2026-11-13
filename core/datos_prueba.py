@@ -4,8 +4,8 @@ Crea (solo el MAESTRO):
 - 2 usuarios: `prueba.admin` (administrador) y `prueba.vendedor` (vendedor),
   con claves aleatorias que se muestran UNA vez (nunca en el código: el
   repositorio de código es público).
-- 1 producto: "[PRUEBA] Bolso de prueba" con 10 unidades.
-- 1 venta simulada de 2 unidades, hecha por `prueba.vendedor` con las
+- 3 productos "[PRUEBA] …" (bolso, cartera y billetera) con stock.
+- 1 venta simulada de 2 bolsos, hecha por `prueba.vendedor` con las
   MISMAS funciones de una venta real (stock, kardex, pagos, numeración).
 
 `eliminar_datos_prueba` borra todo eso en una sola transacción atómica
@@ -37,7 +37,15 @@ USUARIOS_PRUEBA = {
     "prueba.vendedor": ("Vendedor de prueba", VENDEDOR),
 }
 PREFIJO_PRODUCTO = "[PRUEBA]"
-_PRODUCTO = {"nombre": f"{PREFIJO_PRODUCTO} Bolso de prueba", "categoria": "Bolsos", "costo": 45000, "precio": 98000}
+PRODUCTOS_PRUEBA = (
+    {"nombre": f"{PREFIJO_PRODUCTO} Bolso tote rosa", "categoria": "Bolsos", "color": "Rosa",
+     "costo": 45000, "precio": 98000, "stock_minimo": 2, "stock_inicial": 10},
+    {"nombre": f"{PREFIJO_PRODUCTO} Cartera de cuero negra", "categoria": "Carteras", "color": "Negro",
+     "costo": 60000, "precio": 135000, "stock_minimo": 2, "stock_inicial": 6},
+    {"nombre": f"{PREFIJO_PRODUCTO} Billetera mini dorada", "categoria": "Billeteras", "color": "Dorado",
+     "costo": 18000, "precio": 39000, "stock_minimo": 3, "stock_inicial": 15},
+)
+_PRODUCTO = PRODUCTOS_PRUEBA[0]  # el de la venta simulada
 
 
 def _ids_usuarios_prueba(storage) -> set[str]:
@@ -57,6 +65,8 @@ def hay_datos_prueba(storage) -> bool:
 def crear_datos_prueba(storage, rol: str | None, usuario_id: str | None) -> dict:
     """Devuelve `{"usuarios": {usuario: clave}, "producto_id": ..., "venta_numero": ...}`."""
     requerir(rol, "datos_prueba")
+    if storage.get_config("produccion_iniciada"):
+        raise ValueError("Ya empezó la operación real: no se pueden crear datos de prueba.")
     if hay_datos_prueba(storage):
         raise ValueError("Ya existen datos de prueba. Elimínalos primero si quieres crearlos de nuevo.")
 
@@ -72,10 +82,15 @@ def crear_datos_prueba(storage, rol: str | None, usuario_id: str | None) -> dict
             claves[usuario] = clave
         registrar_evento(tx, usuario_id, "crear_datos_prueba", "usuarios=prueba.admin,prueba.vendedor")
 
-    producto = inventory.crear_producto(
-        storage, rol, nombre=_PRODUCTO["nombre"], usuario_id=usuario_id or "", categoria=_PRODUCTO["categoria"],
-        costo=_PRODUCTO["costo"], precio=_PRODUCTO["precio"], stock_minimo=2, stock_inicial=10,
-    )
+    productos_ids = [
+        inventory.crear_producto(
+            storage, rol, nombre=datos["nombre"], usuario_id=usuario_id or "", categoria=datos["categoria"],
+            color=datos["color"], costo=datos["costo"], precio=datos["precio"],
+            stock_minimo=datos["stock_minimo"], stock_inicial=datos["stock_inicial"],
+        )["id"]
+        for datos in PRODUCTOS_PRUEBA
+    ]
+    producto = {"id": productos_ids[0]}
     venta = confirmar_venta(
         storage,
         VENDEDOR,
@@ -91,7 +106,7 @@ def crear_datos_prueba(storage, rol: str | None, usuario_id: str | None) -> dict
         vendedor_nombre=USUARIOS_PRUEBA["prueba.vendedor"][0],
         nota="Venta simulada (datos de prueba)",
     )
-    return {"usuarios": claves, "producto_id": producto["id"], "venta_numero": venta.numero}
+    return {"usuarios": claves, "producto_id": producto["id"], "productos": productos_ids, "venta_numero": venta.numero}
 
 
 def eliminar_datos_prueba(storage, rol: str | None, usuario_id: str | None) -> dict:
