@@ -19,23 +19,29 @@ Flujo (§6, §10):
 """
 from __future__ import annotations
 
+import html
 import importlib
 
 import streamlit as st
 
 from core import auth, schema
 from core.config import DEFAULT_DB_PATH, safe_secret
+from core.config_inicial import claves_faltantes, completar_config_faltante
 from core.demo_mode import demo_activo, render_aviso_datos_prueba
 from core.permissions import ADMIN, PermisoDenegadoError
-from core.storage import Storage
+from core.storage import BaseDeDatosNoDisponibleError, Storage
 from core.timeutil import now_utc, parse_iso_utc, to_iso_utc
 from core.ui import (
     ICONOS_VISTA,
+    card,
+    chip_estado,
     encabezado_marca,
     logo_path,
     mensaje_error_amable,
     pie_pagina,
     reiniciar_identidad_visual_para_este_rerun,
+    resumen_estado_sync,
+    titulo_seccion,
     validar_password,
 )
 from views import ViewContext, vistas_visibles_para_rol
@@ -143,6 +149,57 @@ def _tocar_actividad(sesion: dict) -> None:
     sesion["ultima_actividad_utc"] = to_iso_utc(now_utc())
 
 
+def _autorreparar_config(storage) -> None:
+    """Restaura las claves de configuración del negocio que falten en la
+    base (p.ej. si una versión vieja de la app publicó un libro vacío).
+    Solo agrega lo que falta; nunca pisa un valor editado. Se intenta una
+    vez por proceso: si falla (sin red), la app sigue funcionando igual."""
+    if st.session_state.get("_ot_config_revisada"):
+        return
+    st.session_state["_ot_config_revisada"] = True
+    try:
+        if claves_faltantes(storage):
+            with storage.transaction() as tx:
+                completar_config_faltante(tx)
+    except Exception as exc:  # nunca bloquear el arranque por esto
+        mensaje_error_amable(exc, contexto="autorreparar_config")
+
+
+def _vista_base_no_disponible() -> None:
+    encabezado_marca(subtitulo="Inventario y ventas")
+    with card(acento="superior", key="ot-card-sin-conexion"):
+        titulo_seccion("Sin conexión con la base de datos")
+        st.write(
+            "No pudimos abrir la base de datos en la nube (GitHub). Tus datos "
+            "están a salvo: la app no arranca con una base vacía para no "
+            "sobrescribirlos. Revisa la conexión a internet y vuelve a intentar."
+        )
+        st.caption(
+            "Si el problema continúa, el administrador debe revisar que el token "
+            "(GITHUB_TOKEN) siga vigente en los Secrets de la app."
+        )
+        if st.button("Reintentar", type="primary", use_container_width=True, icon=":material/refresh:"):
+            st.rerun()
+    pie_pagina()
+
+
+def _indicador_conexion(storage) -> None:
+    """Chip discreto en la barra lateral: nube sincronizada / pendiente /
+    conflicto / modo local. Texto + icono, nunca solo color."""
+    if not getattr(storage, "sync_enabled", False):
+        html = chip_estado("Modo local (sin nube)", "info", icono="computer")
+    else:
+        resumen = resumen_estado_sync(storage.sync_status())
+        textos = {
+            "exito": ("Base en la nube al día", "cloud_done"),
+            "alerta": ("Cambios por sincronizar", "cloud_upload"),
+            "error": ("Conflicto de sincronización", "cloud_off"),
+        }
+        texto, icono = textos.get(resumen["categoria"], ("Base en la nube", "cloud"))
+        html = chip_estado(texto, resumen["categoria"], icono=icono)
+    st.markdown(f'<div class="ot-indicador-conexion">{html}</div>', unsafe_allow_html=True)
+
+
 # --------------------------------------------------------------- vistas
 def _vista_cambiar_password(storage, sesion: dict) -> None:
     encabezado_marca()
@@ -185,7 +242,11 @@ def _render_app(storage, sesion: dict) -> None:
     with st.sidebar:
         encabezado_marca(contexto="sidebar")
         etiqueta_rol = "Administrador" if rol == ADMIN else "Vendedor"
-        st.caption(f"{sesion['nombre']} · {etiqueta_rol}")
+        st.markdown(
+            f'<div class="ot-usuario-sidebar"><span class="ot-usuario-sidebar__nombre">{html.escape(str(sesion["nombre"]))}</span>'
+            f'<span class="ot-usuario-sidebar__rol">{etiqueta_rol}</span></div>',
+            unsafe_allow_html=True,
+        )
 
         if not vistas:
             st.warning("Tu usuario no tiene pantallas asignadas todavía.")
@@ -225,6 +286,7 @@ def _render_app(storage, sesion: dict) -> None:
         seleccion = st.session_state["vista_actual"]
 
         st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+        _indicador_conexion(storage)
         if st.button("Cerrar sesión", use_container_width=True, icon=":material/logout:"):
             _cerrar_sesion()
             st.rerun()
@@ -264,7 +326,15 @@ def main() -> None:
 
     storage = _storage_singleton()
 
-    hay_usuarios = _hay_usuarios(storage)
+    try:
+        hay_usuarios = _hay_usuarios(storage)
+    except BaseDeDatosNoDisponibleError as exc:
+        mensaje_error_amable(exc, contexto="abrir_base")  # detalle solo al log
+        _vista_base_no_disponible()
+        return
+
+    if hay_usuarios:
+        _autorreparar_config(storage)
     sesion = _sesion_actual()
     sesion_valida = sesion is not None and sesion_es_valida(storage, sesion)
     if sesion is not None and not sesion_valida:

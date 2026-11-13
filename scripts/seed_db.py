@@ -39,50 +39,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import schema  # noqa: E402
+from core.config_inicial import VALORES_CONFIG_INICIALES  # noqa: E402
 from core.excel_safe import excel_safe  # noqa: E402
 
 GITHUB_REPO_DEFAULT = "GIUSEPPESAN21/OlaTata-Database"
 GITHUB_REPO_ARCHIVE_DEFAULT = "GIUSEPPESAN21/OlaTata-Archive"
 LOCAL_DB_NAME = "OLATATA_DB.xlsx"
 
-CATEGORIAS_INICIALES = [
-    "Bolsos",
-    "Carteras",
-    "Mochilas",
-    "Billeteras",
-    "Cosmetiqueros",
-    "Canguros",
-    "Correas y cinturones",
-    "Bisutería",
-    "Accesorios para el cabello",
-    "Gafas",
-    "Otros",
-]
-
-MENSAJE_RECIBO = (
-    "¡Gracias por tu compra en Ola Tata! Síguenos en Instagram @olatata_1. "
-    "Cambios con este recibo."
-)
-
-_SEP = "|"
-
-# Única fuente de verdad para lo sembrado: `sembrar_config` la escribe,
-# `_leer_publicado_desde_github` la usa para verificar byte a byte lo que
-# quedó publicado, sin duplicar la lista de claves en dos sitios.
-VALORES_CONFIG: dict[str, str] = {
-    "negocio_nombre": "Ola Tata · Bolsos & Accesorios",
-    "negocio_whatsapp": "573173003526",
-    "telefono_whatsapp": "573173003526",
-    "negocio_mensaje_recibo": MENSAJE_RECIBO,
-    "negocio_categorias": _SEP.join(CATEGORIAS_INICIALES),
-    "negocio_metodos_pago_activos": _SEP.join(sorted(schema.METODOS_PAGO)),
-    "sesion_minutos": "480",
-    "permitir_vender_sin_stock": "false",
-    "instagram": "@olatata_1",
-    "ciudades": "Buga, Tuluá",
-    "zona_horaria": "America/Bogota",
-    "moneda": "COP",
-}
+# Los valores viven en `core/config_inicial.py` (única fuente de verdad,
+# compartida con la autorreparación de la app en `app.py`).
+VALORES_CONFIG: dict[str, str] = VALORES_CONFIG_INICIALES
 
 
 def sembrar_config(tx) -> dict[str, str]:

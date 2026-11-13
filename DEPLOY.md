@@ -85,6 +85,27 @@ vez. **A verificar al desplegar realmente:**
   resultado confirmado en este proyecto: no se ha hecho todavía un
   despliegue real para confirmarlo.
 
+### Verificar que la base de datos en la nube quedó conectada
+
+1. Entra con el usuario administrador.
+2. En la barra lateral, debajo del menú, debe verse el indicador
+   **"Base en la nube al día"** (icono de nube). Si dice **"Modo local
+   (sin nube)"**, la app no encontró `GITHUB_TOKEN` en los Secrets.
+3. En **Ajustes → Sincronización** debe aparecer "Conectado a GitHub ·
+   GIUSEPPESAN21/OlaTata-Database" y la versión (sha) cargada.
+4. Haz un cambio pequeño (p.ej. guarda la pestaña Negocio) y revisa que
+   aparezca un commit nuevo "Actualiza OLATATA_DB.xlsx (...)" en el repo
+   `OlaTata-Database`.
+
+Al arrancar, la app **descarga** `OLATATA_DB.xlsx` de GitHub antes de
+mostrar nada (la nube es la fuente de verdad; el disco de Streamlit
+Cloud se borra en cada reinicio). Si GitHub no responde, verás "Sin
+conexión con la base de datos" con un botón **Reintentar** — la app
+nunca arranca con una base vacía, para no sobrescribir los datos reales.
+Si alguna clave de configuración del negocio falta (categorías, métodos
+de pago, WhatsApp…), la app la restaura sola con su valor por defecto,
+sin tocar las que ya editaste.
+
 ## 4. Primer arranque en Windows (PowerShell)
 
 ```powershell
@@ -144,12 +165,10 @@ que importan para no romper la sincronización después:
   nuevo arranca con `_known_remote_sha = None` y en su primer `PUT`
   simplemente usa el SHA real vigente, sin comparar contra nada viejo.
 
-  Nota honesta sobre el estado actual del código: `views/ajustes.py`
-  (pestaña "Sincronización") **no** resuelve un conflicto de verdad
-  todavía — solo deja constancia de qué versión prefieres (local o
-  remota) en texto, para que alguien lo aplique a mano. Hoy, resolver un
-  conflicto real significa hacerlo por fuera de la app (como se describe
-  abajo) y luego reiniciar el proceso de Streamlit.
+  Si de todas formas aparece el conflicto, resuélvelo desde la app:
+  **Ajustes → Sincronización → "Usar la versión de la nube (GitHub)"**
+  (recarga la versión restaurada; la copia del servidor se guarda como
+  respaldo) y escribe `CONFIRMAR`. Ya no hace falta intervenir por fuera.
 
 ### Opción A — ver y extraer una versión anterior con `git`
 

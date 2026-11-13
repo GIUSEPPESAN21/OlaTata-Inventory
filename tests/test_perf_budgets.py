@@ -95,13 +95,11 @@ def test_confirmar_venta_bajo_3s_con_github_disponible_con_3000_ventas(tmp_path,
     storage = Storage(
         local_path=tmp_path / "OLATATA_DB.xlsx", github_repo="demo/repo", github_token="t", sync_enabled=True
     )
-    _poblar_a_escala(storage)
 
     class _RespuestaFalsa:
-        status_code = 200
-
-        def __init__(self, data):
+        def __init__(self, data, status_code=200):
             self._data = data
+            self.status_code = status_code
 
         def json(self):
             return self._data
@@ -109,8 +107,15 @@ def test_confirmar_venta_bajo_3s_con_github_disponible_con_3000_ventas(tmp_path,
         def raise_for_status(self):
             return None
 
+    # Base nueva en la nube (404 al abrirla): la población inicial publica
+    # y deja `_known_remote_sha="fake-sha"`. Desde ahí, GitHub "disponible"
+    # devuelve ese mismo sha y cada venta publica sin conflicto.
+    monkeypatch.setattr("core.storage.requests.get", lambda *a, **k: _RespuestaFalsa({}, 404))
+    monkeypatch.setattr("core.storage.requests.put", lambda *a, **k: _RespuestaFalsa({"content": {"sha": "fake-sha"}}))
+    _poblar_a_escala(storage)
+
     monkeypatch.setattr("core.storage.requests.get", lambda *a, **k: _RespuestaFalsa({"sha": "fake-sha"}))
-    monkeypatch.setattr("core.storage.requests.put", lambda *a, **k: _RespuestaFalsa({"content": {"sha": "fake-sha-2"}}))
+    monkeypatch.setattr("core.storage.requests.put", lambda *a, **k: _RespuestaFalsa({"content": {"sha": "fake-sha"}}))
 
     with _medir_tiempo_real():
         t0 = time.perf_counter()

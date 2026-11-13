@@ -121,6 +121,43 @@ de la fecha.
   consolidados en `core/ui.py`, Material Symbols autoalojado). Estado
   actual de `main` en el momento de escribir esta documentación.
 
+## Base de datos en la nube funcionando + pulido profesional (2026-11-13)
+
+- **CRÍTICO — la base de datos ya no se pierde al reiniciar el servidor.**
+  `core/storage.py` descarga `OLATATA_DB.xlsx` desde `OlaTata-Database`
+  antes de leer el disco. Antes arrancaba con un libro vacío en cada
+  reinicio de Streamlit Cloud y lo publicaba encima de la base real (así
+  se perdieron las 12 claves de configuración del negocio en el commit
+  `42fc96c`). Nunca publica a ciegas sobre una versión remota que no
+  descargó; sin red y sin copia local, muestra "Reintentar" en vez de
+  arrancar vacía. Soporta archivos de más de 1 MB.
+- **Autorreparación de configuración** (`core/config_inicial.py`): al
+  abrir la app se restauran las claves del negocio que falten, sin pisar
+  las editadas. `scripts/seed_db.py` usa la misma fuente de verdad.
+- **Conflictos de sincronización resueltos desde la app**
+  (`core/sincronizacion.py` + Ajustes → Sincronización): "Usar la
+  versión de la nube", "Conservar la de este equipo" y "Sincronizar
+  ahora", con permisos revalidados y respaldo automático.
+- **Indicador de conexión** en la barra lateral (nube al día /
+  pendiente / conflicto / modo local).
+- **Vender — bug corregido**: "Completar con el total restante" dejaba
+  el pago en $ 0, y escanear dos veces el mismo producto no sumaba la
+  cantidad (Streamlit ignoraba el valor puesto por el código). Ahora
+  las acciones van en callbacks `on_click`. Prueba de regresión con
+  `AppTest` en `tests/test_vender_widgets.py`.
+- **Login**: logo y aros dorados centrados (antes el logo quedaba corrido
+  a la izquierda).
+- **Tipografía más clara**: los títulos de pantalla pasan de cursiva
+  (Great Vibes) a Playfair Display; la cursiva queda solo para el nombre
+  de marca "Ola Tata". Subtítulos centrados, etiquetas más legibles.
+- **Tablas legibles** (`core.ui.tabla_amigable`): encabezados en español
+  ("Stock actual" en vez de `stock_actual`), dinero en COP, fechas en
+  hora de Bogotá, "Sistecrédito"/"WhatsApp" en vez de valores internos.
+- **Tarjetas KPI**: misma altura y cifras que se ajustan al ancho de la
+  tarjeta (antes "$ 85.000" se salía de la tarjeta a 1366 px).
+- Ya no aparece el aviso falso "todavía no se publicó en la nube" en
+  modo local.
+
 ---
 
 Nota: esta documentación (README, DEPLOY, MANUAL_USUARIO,

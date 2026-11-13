@@ -16,6 +16,13 @@ import streamlit as st
 from core import auth, schema
 from core.excel_safe import TextoInvalidoError, excel_safe
 from core.permissions import PermisoDenegadoError, requerir
+from core.sincronizacion import (
+    OPCION_CONSERVAR_LOCAL,
+    OPCION_USAR_NUBE,
+    estado_conexion,
+    resolver_conflicto,
+    sincronizar_ahora,
+)
 from core.timeutil import now_utc, parse_iso_utc, to_iso_utc
 from core.ui import (
     card,
@@ -300,9 +307,10 @@ def _tab_sincronizacion(ctx: ViewContext) -> None:
     with card(acento="superior"):
         titulo_seccion("Estado de sincronización")
         status = ctx.storage.sync_status()
-        resumen = resumen_estado_sync(status)
-        mostrar = {"error": st.error, "alerta": st.warning, "exito": st.success}.get(resumen["categoria"], st.info)
-        mostrar(resumen["texto"])
+        if getattr(ctx.storage, "sync_enabled", False):
+            resumen = resumen_estado_sync(status)
+            mostrar = {"error": st.error, "alerta": st.warning, "exito": st.success}.get(resumen["categoria"], st.info)
+            mostrar(resumen["texto"])
 
         ultimo_sync = getattr(status, "ultimo_sync_utc", None)
         if ultimo_sync:
@@ -314,21 +322,63 @@ def _tab_sincronizacion(ctx: ViewContext) -> None:
         if ultimo_error:
             st.caption(f"Último error técnico: {ultimo_error}")
 
+        conexion = estado_conexion(ctx.storage)
+        if conexion.modo == "nube":
+            st.markdown(
+                chip_estado(f"Conectado a GitHub · {conexion.repositorio}", "exito", icono="cloud_done"),
+                unsafe_allow_html=True,
+            )
+            if conexion.sha_remoto:
+                st.caption(f"Versión en la nube: {conexion.sha_remoto[:7]}")
+        else:
+            st.markdown(
+                chip_estado("Modo local: los datos se guardan solo en este equipo", "alerta", icono="computer"),
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                "Para activar la base en la nube, configura GITHUB_TOKEN, GITHUB_REPO y "
+                "GITHUB_REPO_ARCHIVE en los Secrets de la app (ver DEPLOY.md)."
+            )
+
+        if conexion.modo == "nube" and not getattr(status, "en_conflicto", False):
+            if st.button("Sincronizar ahora", use_container_width=True, icon=":material/sync:"):
+                try:
+                    nuevo_estado = sincronizar_ahora(ctx.storage, ctx.usuario.rol)
+                except Exception as exc:  # nunca una traza visible
+                    mensaje, _codigo = mensaje_error_amable(exc, contexto="sincronizar_ahora")
+                    st.error(mensaje)
+                else:
+                    if nuevo_estado.pendientes == 0 and not nuevo_estado.en_conflicto:
+                        st.success("Listo: la base en la nube está al día.")
+                    else:
+                        st.warning(resumen_estado_sync(nuevo_estado)["texto"])
+
         if getattr(status, "en_conflicto", False):
             st.warning(
-                "Hay una versión en conflicto entre lo guardado en este equipo "
-                "(local) y lo que hay en GitHub (remota)."
+                "La base en GitHub cambió por fuera de esta app (por ejemplo, alguien "
+                "restauró una versión). Elige qué versión conservar. Ninguna opción "
+                "borra datos: la versión de GitHub queda en su historial y la copia "
+                "de este equipo se guarda como respaldo."
             )
-            st.info(
-                "**Pendiente documentado (M1):** `core.storage` todavía no "
-                "expone una función para elegir y aplicar una de las dos "
-                "versiones byte a byte — aquí solo se deja constancia de cuál "
-                "se prefiere. Pídele al equipo técnico completar la "
-                "resolución manualmente mientras esa función no exista."
+            eleccion = st.radio(
+                "¿Qué versión conservar?",
+                ["Usar la versión de la nube (GitHub)", "Conservar la versión de este equipo"],
+                key="ajustes_conflicto_eleccion",
             )
-            eleccion = st.radio("¿Qué versión prefieres conservar?", ["Local (este equipo)", "Remota (GitHub)"])
-            if st.button("Dejar constancia de la elección", use_container_width=True, icon=":material/fact_check:"):
-                st.success(f"Elección registrada: {eleccion}. Avisa al soporte técnico para completarla.")
+            confirmar = st.text_input('Escribe "CONFIRMAR" para aplicar', key="ajustes_conflicto_confirmar")
+            if st.button("Aplicar elección", type="primary", use_container_width=True, icon=":material/fact_check:"):
+                if not confirmacion_coincide("CONFIRMAR", confirmar):
+                    st.error('Escribe "CONFIRMAR" para continuar.')
+                else:
+                    opcion = OPCION_USAR_NUBE if eleccion.startswith("Usar") else OPCION_CONSERVAR_LOCAL
+                    try:
+                        resolver_conflicto(ctx.storage, ctx.usuario.rol, opcion)
+                    except Exception as exc:
+                        mensaje, _codigo = mensaje_error_amable(exc, contexto="resolver_conflicto")
+                        st.error(mensaje)
+                    else:
+                        st.success("Conflicto resuelto.")
+                        ctx.rerun()
 
 
 # -------------------------------------------------------------- respaldo

@@ -67,7 +67,42 @@ storage.get_config(clave, default=None) -> str|None
 storage.sync_status() -> SyncStatus(pendientes, en_conflicto, ultimo_error, ultimo_sync_utc)
 storage.archive_get_bytes(path) -> bytes|None
 storage.archive_put_bytes(path, content: bytes, message: str) -> dict
+
+# Agregado (coordinador, 2026-11-13) — ver "Carga desde la nube" abajo:
+storage.sincronizar_ahora() -> SyncStatus              # reintenta publicar pendientes
+storage.resolver_conflicto_usar_nube() -> SyncStatus   # recarga GitHub, respalda la local
+storage.resolver_conflicto_conservar_local() -> SyncStatus  # publica la local encima
+storage.sha_remoto_cargado: str | None                 # informativo
+BaseDeDatosNoDisponibleError                           # sin red y sin copia local
 ```
+
+Las tres operaciones de sincronía NO revalidan permisos (capa de datos):
+la UI debe llamarlas a través de `core/sincronizacion.py`
+(`sincronizar_ahora(storage, rol)`, `resolver_conflicto(storage, rol,
+opcion)`), que exige `resolver_conflicto_sync` como primera línea.
+
+### Carga desde la nube (corrección crítica, 2026-11-13)
+
+Antes, `Storage` solo leía el archivo LOCAL. En Streamlit Community
+Cloud el disco es efímero: tras cada reinicio la app arrancaba con un
+libro vacío y la primera transacción sobrescribía la base real en GitHub
+(así se perdieron las 12 claves de CONFIG en producción, commit
+`42fc96c` de OlaTata-Database). Ahora, con `sync_enabled`, la primera
+lectura (`_ensure_loaded`) descarga `OLATATA_DB.xlsx` de GitHub ANTES de
+mirar el disco:
+
+| Situación al abrir | Resultado |
+|---|---|
+| Remoto existe, local sin cambios pendientes | se usa el remoto (la local distinta se respalda como `*.local-<fecha>.xlsx`) |
+| Local con cambios sin publicar sobre ese MISMO sha remoto | se conserva la local, queda pendiente de publicar |
+| Remoto no existe (404) | base nueva (local si existe, si no vacía) |
+| Sin red, hay copia local | trabaja sin conexión; publica luego comparando contra el sha del sidecar |
+| Sin red, sin copia local | `BaseDeDatosNoDisponibleError` (la app muestra "Reintentar"; NUNCA arranca vacía) |
+
+El sha de la última sincronización y si hay cambios pendientes se guarda
+en un archivo sidecar `OLATATA_DB.xlsx.sync.json` (en `.gitignore`).
+Archivos de más de 1 MB se descargan con `Accept: application/vnd.github.raw`
+(la API de contenidos no incluye `content` en base64 por encima de 1 MB).
 
 Reglas duras:
 - `write_sheet` / `set_config` / `next_counter` **solo** dentro de
@@ -78,7 +113,9 @@ Reglas duras:
   `os.replace`, con respaldo `.bak` del anterior) y publicación síncrona
   a GitHub.
 - Publicación: compara el SHA remoto conocido contra el SHA remoto real
-  antes de escribir. Si cambiaron → `ConflictoDeSincronizacionError`,
+  antes de escribir — también cuando el conocido es `None` y el remoto
+  SÍ existe (nunca se sobrescribe a ciegas una base que esta instancia
+  no descargó). Si cambiaron → `ConflictoDeSincronizacionError`,
   **nunca sobrescribe**, marca `sync_status().en_conflicto = True`. Ante
   409/422 transitorio reintenta hasta 2 veces. Si no hay red: la venta
   YA quedó a salvo en disco local; solo sube `sync_status().pendientes`.

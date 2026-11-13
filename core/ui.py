@@ -69,6 +69,8 @@ __all__ = [
     "logo_path",
     "plantilla_plotly_olatata",
     "registrar_tema_plotly",
+    "ETIQUETAS_COLUMNAS",
+    "tabla_amigable",
 ]
 
 # Iconos Material Symbols (§9: sin emojis en la UI) para cada vista del
@@ -502,14 +504,29 @@ def encabezado_marca(
 
     subtitulo_html = f'<p class="ot-hero-logo__subtitulo">{subtitulo}</p>' if subtitulo else ""
 
+    # Bloque HTML único (logo + aros + nombre + subtítulo) centrado con
+    # flexbox. Antes el logo iba en `st.columns([1, 2, 1])` + `st.image`,
+    # que lo alineaba a la IZQUIERDA de la columna central mientras los
+    # aros se centraban en otro contenedor: logo corrido y aros
+    # desalineados en el login. Una sola línea, sin huecos en blanco (ver
+    # el comentario en `encabezado_pagina`).
+    logo_html = ""
     if ruta_logo:
-        with st.container(key="ot-hero-logo"):
-            st.markdown(f'<div class="ot-aros-wrap">{brand_rings_svg(260)}</div>', unsafe_allow_html=True)
-            col_izq, col_centro, col_der = st.columns([1, 2, 1])
-            with col_centro:
-                st.image(ruta_logo, width=220, caption=None)
+        import base64
+
+        b64 = base64.b64encode(Path(ruta_logo).read_bytes()).decode("ascii")
+        logo_html = (
+            '<div class="ot-hero-marca__logo">'
+            + f'<div class="ot-hero-marca__aros">{brand_rings_svg(260)}</div>'
+            + f'<img src="data:image/png;base64,{b64}" alt="Logo de {nombre_negocio}" width="200" height="200">'
+            + "</div>"
+        )
     st.markdown(
-        f"<div class='ot-marca-script ot-marca-script--hero'>{nombre_negocio}</div>{subtitulo_html}",
+        '<div class="ot-hero-marca">'
+        + logo_html
+        + f"<div class='ot-marca-script ot-marca-script--hero'>{nombre_negocio}</div>"
+        + subtitulo_html
+        + "</div>",
         unsafe_allow_html=True,
     )
 
@@ -531,10 +548,9 @@ def render_logo(tamano_px: int = 72, *, nombre_archivo: str = "olatata-logo.png"
 
 def encabezado_pagina(titulo: str, subtitulo: str | None = None, *, icono: str | None = None) -> None:
     """Encabezado de página — bloque "hero" centrado (C5/D-todas): título
-    en script de marca (Great Vibes, 56px escritorio / 40px celular vía
-    `assets/theme.css`, solo apto porque el título de cada pantalla es
-    una sola palabra -- "Vender"/"Inventario"/"Análisis"/"Ajustes" --
-    dentro del límite de 4 palabras para usar la tipografía de guion),
+    en Playfair Display 600 (serif clara y legible; la cursiva Great
+    Vibes queda reservada SOLO para el nombre de marca "Ola Tata", porque
+    en títulos de pantalla costaba leerla),
     subtítulo Inter centrado y filete dorado centrado de 96px debajo.
     `icono`, si se da, pinta un círculo rosado con el icono Material
     encima del título (D-inventario/análisis/ajustes).
@@ -651,3 +667,145 @@ def registrar_tema_plotly() -> None:
 
     pio.templates["olatata"] = plantilla_plotly_olatata()
     pio.templates.default = "olatata"
+
+
+# --------------------------------------------------------- tablas legibles
+# Nombres técnicos de columnas (hojas del libro / registros de
+# `core.analytics`) -> etiquetas en español para mostrar en pantalla. Las
+# tablas son lo que más se mira en Inventario y Análisis: ver
+# "stock_actual" o "codigo_barras" se sentía como una hoja de cálculo
+# cruda, no como un producto profesional.
+ETIQUETAS_COLUMNAS: dict[str, str] = {
+    "id": "Código",
+    "producto_id": "Producto",
+    "nombre": "Nombre",
+    "nombre_snapshot": "Producto",
+    "categoria": "Categoría",
+    "color": "Color",
+    "talla_tamano": "Talla / tamaño",
+    "proveedor_id": "Proveedor",
+    "stock": "Stock",
+    "stock_actual": "Stock actual",
+    "stock_minimo": "Stock mínimo",
+    "stock_en_hoja": "Stock registrado",
+    "stock_recalculado": "Stock recalculado",
+    "cantidad": "Cantidad",
+    "costo": "Costo",
+    "precio": "Precio",
+    "codigo_barras": "Código de barras",
+    "activo": "Activo",
+    "sede": "Sede",
+    "sede_id": "Sede",
+    "numero": "Número",
+    "fecha": "Fecha",
+    "fecha_local": "Fecha",
+    "fecha_hora_utc": "Fecha y hora",
+    "hora": "Hora",
+    "mes": "Mes",
+    "inicio_semana": "Semana desde",
+    "canal": "Canal",
+    "cliente_nombre": "Cliente",
+    "cliente_telefono": "Teléfono",
+    "vendedor_nombre": "Vendedor",
+    "metodo": "Método de pago",
+    "nro_pagos": "N.º de pagos",
+    "total": "Total",
+    "subtotal": "Subtotal",
+    "monto": "Monto",
+    "valor": "Valor",
+    "ventas_netas": "Ventas netas",
+    "ganancia": "Ganancia",
+    "costo_vendido": "Costo de lo vendido",
+    "margen_pct": "Margen",
+    "variacion_pct": "Variación",
+    "tickets": "Tickets",
+    "ticket_promedio": "Ticket promedio",
+    "unidades": "Unidades",
+    "unidades_vendidas": "Unidades vendidas",
+    "descuento_total": "Descuento",
+    "descuentos_otorgados": "Descuentos",
+    "envios_cobrados": "Envíos cobrados",
+    "devoluciones_unidades": "Unidades devueltas",
+    "devoluciones_valor": "Valor devuelto",
+    "al_costo": "Valor al costo",
+    "al_precio": "Valor al precio",
+    "diferencia": "Diferencia",
+    "fila": "Fila",
+    "columna": "Columna",
+    "error": "Error",
+    "advertencia": "Advertencia",
+    "estado": "Estado",
+    "motivo": "Motivo",
+    "referencia": "Referencia",
+    "notas": "Notas",
+    "telefono": "Teléfono",
+    "ciudad": "Ciudad",
+}
+
+# Columnas que traen pesos enteros (R1): se muestran con `format_cop`.
+_COLUMNAS_DINERO = frozenset(
+    {
+        "costo", "precio", "total", "subtotal", "monto", "valor", "ventas_netas",
+        "ganancia", "costo_vendido", "ticket_promedio", "descuento_total",
+        "descuentos_otorgados", "envios_cobrados", "devoluciones_valor",
+        "al_costo", "al_precio", "precio_unitario", "costo_unitario", "total_linea",
+        "reembolso_monto",
+    }
+)
+
+# Valores internos -> texto legible (métodos de pago y canales).
+_VALORES_LEGIBLES: dict[str, dict[str, str]] = {
+    "metodo": {
+        "efectivo": "Efectivo",
+        "datafono": "Datáfono",
+        "transferencia": "Transferencia",
+        "sistecredito": "Sistecrédito",
+        "cambio": "Cambio",
+    },
+    "canal": {"tienda": "Tienda", "instagram": "Instagram", "whatsapp": "WhatsApp"},
+}
+
+
+def _formatear_dinero_celda(valor: Any) -> Any:
+    try:
+        import pandas as pd
+
+        if valor is None or (not isinstance(valor, str) and pd.isna(valor)):
+            return "—"
+    except (TypeError, ValueError):
+        pass
+    if isinstance(valor, bool):
+        return valor
+    if isinstance(valor, int):
+        return format_cop(valor)
+    if isinstance(valor, float) and valor.is_integer():
+        return format_cop(int(valor))
+    return valor  # ya formateado (texto) o no numérico: se deja igual
+
+
+def _formatear_fecha_utc_celda(valor: Any) -> Any:
+    from core.timeutil import parse_iso_utc
+
+    try:
+        return formatear_fecha_hora_local(parse_iso_utc(str(valor)))
+    except Exception:
+        return valor
+
+
+def tabla_amigable(df: Any) -> Any:
+    """Devuelve una COPIA de `df` lista para mostrar: dinero en COP (R1),
+    fechas UTC en hora de Bogotá (R2), métodos/canales legibles y
+    encabezados en español. Solo presentación: nunca recalcula nada."""
+    tabla = df.copy()
+    for col in tabla.columns:
+        if col in _COLUMNAS_DINERO:
+            tabla[col] = tabla[col].map(_formatear_dinero_celda)
+        elif col.endswith("_utc"):
+            tabla[col] = tabla[col].map(_formatear_fecha_utc_celda)
+        elif col in _VALORES_LEGIBLES:
+            mapa = _VALORES_LEGIBLES[col]
+            tabla[col] = tabla[col].map(lambda v, m=mapa: m.get(str(v), v))
+    tabla.columns = [
+        ETIQUETAS_COLUMNAS.get(col, str(col).replace("_", " ").strip().capitalize()) for col in tabla.columns
+    ]
+    return tabla

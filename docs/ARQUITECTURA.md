@@ -155,19 +155,26 @@ API de contenidos de GitHub para control de concurrencia optimista:
   `sync_status().pendientes` para que Ajustes → Sincronización lo
   muestre.
 
-`self._known_remote_sha` vive **en memoria del proceso**, no en disco:
-un reinicio de la app empieza sin SHA conocido, así que su primera
-publicación nunca compara contra nada viejo (ver `DEPLOY.md`, sección
-"Restaurar una versión anterior", para la implicación práctica de esto
-al restaurar un commit manualmente).
+**Carga inicial desde GitHub.** Con `sync_enabled`, la primera lectura
+descarga `OLATATA_DB.xlsx` desde el repo de datos y fija
+`_known_remote_sha` con el sha de esa versión: la nube es la fuente de
+verdad y el disco local solo es una copia de trabajo (en Streamlit Cloud
+el disco es efímero). Un archivo sidecar `OLATATA_DB.xlsx.sync.json`
+recuerda contra qué sha se sincronizó la copia local y si quedaron
+cambios sin publicar, para no perderlos tras un reinicio sin red. Si la
+nube no responde y no hay copia local, `BaseDeDatosNoDisponibleError`
+detiene el arranque (pantalla "Sin conexión con la base de datos" con
+botón Reintentar) en vez de arrancar con un libro vacío. Detalle y tabla
+de casos en `docs/CONTRATOS.md`.
 
-**Hallazgo de documentación (no es un bug de `core/storage.py`, es una
-limitación real de `views/ajustes.py`):** la pestaña "Sincronización"
-de Ajustes detecta y muestra un conflicto (`sync_status().en_conflicto`)
-pero **no** lo resuelve — solo deja constancia en texto de qué versión
-se prefiere (local o remota). `core/storage.py` no expone todavía una
-función para aplicar esa elección byte a byte; hoy la resolución real
-ocurre por fuera de la app (ver `DEPLOY.md`).
+**Resolución de conflictos (Ajustes → Sincronización).** El admin elige
+"Usar la versión de la nube" (`resolver_conflicto_usar_nube`: respalda
+la copia local como `*.conflicto-<fecha>.xlsx` y recarga GitHub) o
+"Conservar la versión de este equipo" (`resolver_conflicto_conservar_local`:
+publica la local encima; la versión remota queda en el historial de
+commits). Ambas pasan por `core/sincronizacion.py`, que revalida el
+permiso `resolver_conflicto_sync`. "Sincronizar ahora" reintenta publicar
+cambios pendientes tras una caída de red.
 
 ## Contrato de permisos (`core/permissions.py`)
 

@@ -239,6 +239,9 @@ def test_publish_detecta_conflicto_real_y_no_sobrescribe(tmp_path):
 
 def test_red_caida_no_pierde_la_venta_solo_marca_pendiente(tmp_path):
     st = Storage(local_path=tmp_path / "OLATATA_DB.xlsx", github_repo="x/y", github_token="t", sync_enabled=True)
+    # La base se abrió bien (nueva en la nube); la red se cae DESPUÉS.
+    with patch("core.storage.requests.get", return_value=_mock_response(404)):
+        st.read_sheet(schema.CONFIG)
     with patch("core.storage.requests.get", side_effect=ConnectionError("sin red")):
         with st.transaction() as tx:
             tx.set_config("a", "1")

@@ -20,7 +20,7 @@ from core.excel_report import exportar_periodo_excel
 from core.money import format_cop
 from core.permissions import PermisoDenegadoError, tiene_capacidad
 from core.timeutil import now_utc, local_date
-from core.ui import card, encabezado_pagina, estado_vacio, kpi_card, titulo_seccion
+from core.ui import card, encabezado_pagina, estado_vacio, kpi_card, tabla_amigable, titulo_seccion
 from views import ViewContext
 
 _COLOR_PRIMARIO = PALETA_MARCA[0]
@@ -120,7 +120,7 @@ def _dataframe_o_vacio(registros: list[dict], key: str, mensaje: str) -> None:
     if not registros:
         estado_vacio(mensaje, icono="bar_chart")
         return
-    st.dataframe(pd.DataFrame(registros), use_container_width=True, hide_index=True, key=key)
+    st.dataframe(tabla_amigable(pd.DataFrame(registros)), use_container_width=True, hide_index=True, key=key)
 
 
 def _grafica_top_o_vacio(registros: list[dict], campo_y: str, etiqueta: str, titulo: str, key: str, mensaje: str) -> None:

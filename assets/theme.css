@@ -84,8 +84,15 @@ body, [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"]
   line-height: 1.55;
 }
 [data-testid="stWidgetLabel"] p {
-  font-size: 0.875rem;
+  font-size: 0.92rem;
   font-weight: 600;
+  color: var(--ot-tinta);
+}
+/* Texto más nítido y legible en toda la app */
+html, body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 /* ------------------------------------------------------- fondo de mármol */
@@ -216,6 +223,11 @@ img, [data-testid="stImage"] img {
   align-items: center;
   text-align: center;
   gap: 0.35rem;
+  /* La cifra se dimensiona según el ANCHO REAL de la tarjeta (no de la
+     ventana): con 6 KPI por fila a 1366px, "$ 85.000" se partía en dos
+     líneas y se salía de la tarjeta. */
+  container-type: inline-size;
+  width: 100%;
 }
 .ot-kpi__icono {
   width: 52px;
@@ -234,16 +246,28 @@ img, [data-testid="stImage"] img {
 .ot-kpi__valor {
   font-family: "Inter", sans-serif;
   font-weight: 700;
-  font-size: clamp(2rem, 4vw, 2.75rem);
+  font-size: clamp(1.6rem, 4vw, 2.75rem);
+  font-size: clamp(1.05rem, 15cqi, 2.75rem);
   color: var(--ot-tinta);
   line-height: 1.1;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ot-kpi__etiqueta {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.8rem;
   font-weight: 600;
+  line-height: 1.35;
   color: var(--ot-texto-secundario);
+  /* Reserva 2 líneas: así todas las tarjetas de una fila quedan de la
+     misma altura aunque una etiqueta ("Ventas netas") se parta en dos. */
+  min-height: 2.7em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .ot-kpi__delta {
   display: inline-flex;
@@ -394,18 +418,24 @@ button:focus-visible {
 .ot-encabezado-pagina__icono .material-symbols-outlined {
   font-size: 28px;
 }
+/* Títulos de pantalla en serif clara (Playfair Display), NO en cursiva:
+   la script Great Vibes queda solo para el nombre de marca "Ola Tata". */
 .ot-encabezado-pagina__titulo {
-  font-family: "Great Vibes", "Brush Script MT", cursive;
-  font-weight: 400;
-  font-size: clamp(2.5rem, 6vw, 3.5rem);
+  font-family: "Playfair Display", Georgia, serif;
+  font-weight: 600;
+  font-size: clamp(2.1rem, 4.5vw, 2.85rem);
   color: var(--ot-tinta);
-  line-height: 1.15;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
   margin: 0;
 }
 .ot-encabezado-pagina__subtitulo {
   color: var(--ot-texto-secundario);
-  font-size: 1.1rem;
-  margin: 0.35rem 0 0 0;
+  font-size: 1.05rem;
+  line-height: 1.5;
+  max-width: 40rem;
+  margin: 0.45rem auto 0 auto;
+  text-align: center;
 }
 .ot-encabezado-pagina__filete {
   width: 96px;
@@ -447,7 +477,73 @@ button:focus-visible {
   margin: 0.25rem 0 1rem 0;
 }
 
-/* Logo + aros del login/primer arranque (contenedor `key="ot-hero-logo"`) */
+/* Cabecera de marca del login/primer arranque (`core.ui.encabezado_marca`):
+   un solo bloque flex centrado; los aros quedan exactamente detrás del logo. */
+.ot-hero-marca {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin: 0.5rem auto 0.75rem auto;
+}
+.ot-hero-marca__logo {
+  position: relative;
+  width: 260px;
+  height: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ot-hero-marca__aros {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 0;
+}
+.ot-hero-marca__logo img {
+  position: relative;
+  z-index: 1;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: var(--ot-sombra-2);
+}
+@media (max-width: 480px) {
+  .ot-hero-marca__logo { width: 200px; height: 200px; }
+  .ot-hero-marca__aros svg { width: 200px; height: 200px; }
+  .ot-hero-marca__logo img { width: 156px; height: 156px; }
+}
+
+/* Usuario + indicador de conexión en la barra lateral (app.py) */
+.ot-usuario-sidebar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin: 0.25rem 0 0.75rem 0;
+}
+.ot-usuario-sidebar__nombre {
+  font-weight: 600;
+  color: var(--ot-tinta);
+  font-size: 0.95rem;
+}
+.ot-usuario-sidebar__rol {
+  font-size: 0.78rem;
+  color: var(--ot-texto-secundario);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.ot-indicador-conexion {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 0.6rem 0;
+}
+
+/* (legado) Logo + aros con contenedor `key="ot-hero-logo"` */
 [class*="st-key-ot-hero-logo"] {
   position: relative;
   display: flex;
@@ -619,7 +715,7 @@ button:focus-visible {
 }
 @media (max-width: 480px) {
   .ot-marca-script--hero { font-size: 2.5rem; }
-  .ot-encabezado-pagina__titulo { font-size: 2.25rem; }
+  .ot-encabezado-pagina__titulo { font-size: 1.9rem; }
   .ot-total-carrito__valor { font-size: 2.25rem; }
   /* NOTA: no se fuerza min-width/display en [data-testid="stSidebar"]
      aquí -- Streamlit ya la convierte en un cajón (drawer) superpuesto

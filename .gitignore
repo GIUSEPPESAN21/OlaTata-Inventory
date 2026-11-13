@@ -4,6 +4,8 @@
 
 # Datos (nunca en el repo de código)
 *.xlsx
+*.sync.json
+*.descarga.tmp
 _referencia/
 demo/
 

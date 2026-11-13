@@ -18,7 +18,7 @@ from core import costing, importer, inventory, labels_ot
 from core.money import DineroInvalidoError, format_cop
 from core.permissions import PermisoDenegadoError, requerir, tiene_capacidad
 from core.schema import SEDE_PRINCIPAL
-from core.ui import card, chip_estado, encabezado_pagina, estado_vacio, titulo_seccion
+from core.ui import card, chip_estado, encabezado_pagina, estado_vacio, tabla_amigable, titulo_seccion
 from views import ViewContext
 
 logger = logging.getLogger(__name__)
@@ -108,19 +108,21 @@ def _tab_productos(ctx: ViewContext, rol: str) -> None:
         mostrar["precio"] = mostrar["precio"].apply(lambda v: format_cop(int(v)) if pd.notna(v) else "—")
         with card(acento="superior"):
             st.dataframe(
-                mostrar[
-                    [
-                        "id",
-                        "nombre",
-                        "categoria",
-                        "stock_actual",
-                        "stock_minimo",
-                        "costo",
-                        "precio",
-                        "codigo_barras",
-                        "activo",
+                tabla_amigable(
+                    mostrar[
+                        [
+                            "id",
+                            "nombre",
+                            "categoria",
+                            "stock_actual",
+                            "stock_minimo",
+                            "costo",
+                            "precio",
+                            "codigo_barras",
+                            "activo",
+                        ]
                     ]
-                ],
+                ),
                 use_container_width=True,
                 hide_index=True,
             )
@@ -443,7 +445,7 @@ def _tab_importar(ctx: ViewContext, rol: str) -> None:
     if resultado.errores:
         st.error("Hay errores en algunas filas. Corrígelas y vuelve a subir el archivo; no se importó nada.")
         st.dataframe(
-            pd.DataFrame([{"fila": e.fila, "columna": e.columna, "error": e.mensaje} for e in resultado.errores]),
+            tabla_amigable(pd.DataFrame([{"fila": e.fila, "columna": e.columna, "error": e.mensaje} for e in resultado.errores])),
             use_container_width=True,
             hide_index=True,
         )
@@ -451,8 +453,10 @@ def _tab_importar(ctx: ViewContext, rol: str) -> None:
     if resultado.advertencias:
         st.warning("Hay advertencias (no bloquean la importación):")
         st.dataframe(
-            pd.DataFrame(
-                [{"fila": a.fila, "columna": a.columna, "advertencia": a.mensaje} for a in resultado.advertencias]
+            tabla_amigable(
+                pd.DataFrame(
+                    [{"fila": a.fila, "columna": a.columna, "advertencia": a.mensaje} for a in resultado.advertencias]
+                )
             ),
             use_container_width=True,
             hide_index=True,
@@ -460,7 +464,7 @@ def _tab_importar(ctx: ViewContext, rol: str) -> None:
 
     if resultado.filas_validas:
         st.markdown("**Vista previa de lo que se va a importar:**")
-        st.dataframe(pd.DataFrame(resultado.filas_validas), use_container_width=True, hide_index=True)
+        st.dataframe(tabla_amigable(pd.DataFrame(resultado.filas_validas)), use_container_width=True, hide_index=True)
 
     if resultado.ok and resultado.filas_validas:
         confirmar = st.checkbox("Confirmo que revisé la vista previa y quiero importar estas filas.")
@@ -558,7 +562,7 @@ def _tab_integridad(ctx: ViewContext, rol: str) -> None:
         else:
             st.error(f"Se encontraron {len(diferencias)} diferencia(s). Revisa el kardex de estos productos.")
             st.dataframe(
-                pd.DataFrame(
+                tabla_amigable(pd.DataFrame(
                     [
                         {
                             "producto_id": d.producto_id,
@@ -569,7 +573,7 @@ def _tab_integridad(ctx: ViewContext, rol: str) -> None:
                         }
                         for d in diferencias
                     ]
-                ),
+                )),
                 use_container_width=True,
                 hide_index=True,
             )

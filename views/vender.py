@@ -39,7 +39,98 @@ def _init_state() -> None:
     st.session_state.setdefault("vender_recibo", None)
 
 
+_PREFIJOS_WIDGETS_CARRITO = ("vender_cant_", "vender_pago_metodo_", "vender_pago_monto_")
+
+
+def _reiniciar_widgets_carrito() -> None:
+    """Olvida el estado de los widgets de cantidad/pago (p.ej. al empezar
+    una venta nueva, cuando esos widgets no están en pantalla)."""
+    for clave in [k for k in st.session_state.keys() if str(k).startswith(_PREFIJOS_WIDGETS_CARRITO)]:
+        del st.session_state[clave]
+
+
+def _leer_widgets_al_estado() -> None:
+    """Copia a `vender_carrito`/`vender_pagos` lo último que el usuario
+    escribió en los widgets (por si cambió algo justo antes del clic)."""
+    for idx, linea in enumerate(st.session_state.vender_carrito):
+        valor = st.session_state.get(f"vender_cant_{idx}")
+        if valor is not None:
+            linea["cantidad"] = int(valor)
+    for idx, pago in enumerate(st.session_state.vender_pagos):
+        metodo = st.session_state.get(f"vender_pago_metodo_{idx}")
+        monto = st.session_state.get(f"vender_pago_monto_{idx}")
+        if metodo is not None:
+            pago["metodo"] = metodo
+        if monto is not None:
+            pago["monto"] = int(monto)
+
+
+def _escribir_estado_a_widgets() -> None:
+    """Fija el valor de cada widget de cantidad/pago desde el estado real.
+
+    Streamlit IGNORA el `value=` de un widget con `key` que ya tiene
+    estado, y `st.rerun()` vuelve a aplicar lo que mandó el navegador.
+    Por eso, cuando el CÓDIGO cambia el carrito o los pagos (escanear otra
+    vez el mismo producto, quitar una línea, "Completar con el total
+    restante"), el widget mostraba el valor viejo y lo escribía encima:
+    el escáner no sumaba y "Completar" dejaba el pago en $ 0 (hallazgo de
+    la prueba E2E). La forma soportada es fijar `st.session_state[key]`
+    DENTRO de un callback `on_click` — que es desde donde se llama esto."""
+    n_lineas = len(st.session_state.vender_carrito)
+    n_pagos = len(st.session_state.vender_pagos)
+    for clave in [k for k in st.session_state.keys() if str(k).startswith(_PREFIJOS_WIDGETS_CARRITO)]:
+        idx = int(str(clave).rsplit("_", 1)[1])
+        limite = n_lineas if str(clave).startswith("vender_cant_") else n_pagos
+        if idx >= limite:
+            del st.session_state[clave]
+    for idx, linea in enumerate(st.session_state.vender_carrito):
+        st.session_state[f"vender_cant_{idx}"] = int(linea["cantidad"])
+    for idx, pago in enumerate(st.session_state.vender_pagos):
+        st.session_state[f"vender_pago_metodo_{idx}"] = pago["metodo"]
+        st.session_state[f"vender_pago_monto_{idx}"] = int(pago["monto"])
+
+
+# ------------------------------------------------------------ callbacks
+def _cb_agregar(productos_activos) -> None:
+    _leer_widgets_al_estado()
+    texto = st.session_state.get("vender_busqueda_texto", "") or ""
+    fila = _buscar_producto(productos_activos, texto)
+    if fila is None:
+        st.session_state["vender_busqueda_error"] = True
+        return
+    st.session_state["vender_busqueda_error"] = False
+    _agregar_al_carrito(fila)
+    _escribir_estado_a_widgets()
+
+
+def _cb_quitar_linea(idx: int) -> None:
+    _leer_widgets_al_estado()
+    st.session_state.vender_carrito.pop(idx)
+    _escribir_estado_a_widgets()
+
+
+def _cb_quitar_pago(idx: int) -> None:
+    _leer_widgets_al_estado()
+    st.session_state.vender_pagos.pop(idx)
+    _escribir_estado_a_widgets()
+
+
+def _cb_agregar_pago() -> None:
+    _leer_widgets_al_estado()
+    st.session_state.vender_pagos.append({"metodo": "efectivo", "monto": 0})
+    _escribir_estado_a_widgets()
+
+
+def _cb_completar_total(total_estimado: int) -> None:
+    _leer_widgets_al_estado()
+    pagos = st.session_state.vender_pagos
+    suma_otros = sum(int(p["monto"]) for p in pagos[:-1])
+    pagos[-1]["monto"] = max(0, int(total_estimado) - suma_otros)
+    _escribir_estado_a_widgets()
+
+
 def _nueva_venta() -> None:
+    _reiniciar_widgets_carrito()
     st.session_state.vender_carrito = []
     st.session_state.vender_idempotency_key = str(uuid.uuid4())
     st.session_state.vender_pagos = [{"metodo": "efectivo", "monto": 0}]
@@ -102,17 +193,19 @@ def render(ctx: ViewContext) -> None:
 
     with card(acento="superior"):
         with st.form("vender_buscar", clear_on_submit=True):
-            texto_busqueda = st.text_input("Buscar por nombre, código o escanear", icon=":material/search:")
-            buscar = st.form_submit_button(
-                "Agregar al carrito", use_container_width=True, type="primary", icon=":material/add_shopping_cart:"
+            st.text_input(
+                "Buscar por nombre, código o escanear", icon=":material/search:", key="vender_busqueda_texto"
             )
-    if buscar:
-        fila = _buscar_producto(productos_activos, texto_busqueda)
-        if fila is None:
-            st.error("No se encontró ningún producto con ese nombre/código. Código: VEN-404.")
-        else:
-            _agregar_al_carrito(fila)
-            ctx.rerun()
+            st.form_submit_button(
+                "Agregar al carrito",
+                use_container_width=True,
+                type="primary",
+                icon=":material/add_shopping_cart:",
+                on_click=_cb_agregar,
+                args=(productos_activos,),
+            )
+    if st.session_state.pop("vender_busqueda_error", False):
+        st.error("No se encontró ningún producto con ese nombre/código. Código: VEN-404.")
 
     if not st.session_state.vender_carrito:
         estado_vacio("El carrito está vacío.", "Busca o escanea un producto para empezar.", icono="shopping_cart")
@@ -120,22 +213,28 @@ def render(ctx: ViewContext) -> None:
 
     with card(acento="izquierdo"):
         titulo_seccion("Carrito", centrado=False)
-        idx_a_eliminar = None
         for idx, linea in enumerate(st.session_state.vender_carrito):
             col1, col2, col3, col4 = st.columns([3.2, 1.6, 1.6, 1.6])
             col1.write(linea["nombre_snapshot"])
-            nueva_cantidad = col2.number_input(
-                "Cant.", min_value=1, value=int(linea["cantidad"]), key=f"vender_cant_{idx}", step=1
-            )
+            clave_cant = f"vender_cant_{idx}"
+            # `value=` solo si el widget aún no tiene estado: si se fijó
+            # desde un callback, pasarlo también genera un aviso de Streamlit.
+            inicial = {} if clave_cant in st.session_state else {"value": int(linea["cantidad"])}
+            nueva_cantidad = col2.number_input("Cant.", min_value=1, key=clave_cant, step=1, **inicial)
             linea["cantidad"] = int(nueva_cantidad)
             col3.markdown(
                 f'<span class="ot-precio-producto">{format_cop(linea["precio_unitario"] * linea["cantidad"])}</span>',
                 unsafe_allow_html=True,
             )
-            if col4.button("Quitar", key=f"vender_del_{idx}", icon=":material/delete:", help="Quitar del carrito"):
-                idx_a_eliminar = idx
-        if idx_a_eliminar is not None:
-            st.session_state.vender_carrito.pop(idx_a_eliminar)
+            col4.button(
+                "Quitar",
+                key=f"vender_del_{idx}",
+                icon=":material/delete:",
+                help="Quitar del carrito",
+                on_click=_cb_quitar_linea,
+                args=(idx,),
+            )
+        if not st.session_state.vender_carrito:  # se quitó la última línea
             ctx.rerun()
 
         subtotal = sum(l["precio_unitario"] * l["cantidad"] for l in st.session_state.vender_carrito)
@@ -184,36 +283,40 @@ def render(ctx: ViewContext) -> None:
     with card(acento="izquierdo"):
         titulo_seccion("Pago", centrado=False)
         st.caption("Puedes dividir el pago en dos o más métodos.")
-        idx_pago_eliminar = None
         for idx, pago in enumerate(st.session_state.vender_pagos):
             colm, colv, colx = st.columns([2, 2, 1])
             metodos = list(_METODOS_LABEL.keys())
+            clave_metodo = f"vender_pago_metodo_{idx}"
+            clave_monto = f"vender_pago_monto_{idx}"
+            inicial_metodo = (
+                {} if clave_metodo in st.session_state
+                else {"index": metodos.index(pago["metodo"]) if pago["metodo"] in metodos else 0}
+            )
+            inicial_monto = {} if clave_monto in st.session_state else {"value": int(pago["monto"])}
             pago["metodo"] = colm.selectbox(
-                "Método",
-                metodos,
-                index=metodos.index(pago["metodo"]) if pago["metodo"] in metodos else 0,
-                format_func=lambda k: _METODOS_LABEL[k],
-                key=f"vender_pago_metodo_{idx}",
+                "Método", metodos, format_func=lambda k: _METODOS_LABEL[k], key=clave_metodo, **inicial_metodo
             )
-            pago["monto"] = colv.number_input(
-                "Monto", min_value=0, value=int(pago["monto"]), key=f"vender_pago_monto_{idx}"
-            )
-            if len(st.session_state.vender_pagos) > 1 and colx.button(
-                "Quitar", key=f"vender_pago_del_{idx}", icon=":material/delete:"
-            ):
-                idx_pago_eliminar = idx
-        if idx_pago_eliminar is not None:
-            st.session_state.vender_pagos.pop(idx_pago_eliminar)
-            ctx.rerun()
+            pago["monto"] = colv.number_input("Monto", min_value=0, key=clave_monto, **inicial_monto)
+            if len(st.session_state.vender_pagos) > 1:
+                colx.button(
+                    "Quitar",
+                    key=f"vender_pago_del_{idx}",
+                    icon=":material/delete:",
+                    on_click=_cb_quitar_pago,
+                    args=(idx,),
+                )
 
         colb1, colb2 = st.columns(2)
-        if colb1.button("Agregar método de pago", icon=":material/add:", use_container_width=True):
-            st.session_state.vender_pagos.append({"metodo": "efectivo", "monto": 0})
-            ctx.rerun()
-        if colb2.button("Completar con el total restante", icon=":material/payments:", use_container_width=True):
-            suma_otros = sum(p["monto"] for p in st.session_state.vender_pagos[:-1])
-            st.session_state.vender_pagos[-1]["monto"] = max(0, total_estimado - suma_otros)
-            ctx.rerun()
+        colb1.button(
+            "Agregar método de pago", icon=":material/add:", use_container_width=True, on_click=_cb_agregar_pago
+        )
+        colb2.button(
+            "Completar con el total restante",
+            icon=":material/payments:",
+            use_container_width=True,
+            on_click=_cb_completar_total,
+            args=(total_estimado,),
+        )
 
         suma_pagos = sum(int(p["monto"]) for p in st.session_state.vender_pagos)
         # Dos columnas en vez de un solo st.write con dos montos: Streamlit
@@ -279,7 +382,9 @@ def _mostrar_recibo(ctx: ViewContext) -> None:
     encabezado_pagina("Venta confirmada", icono="task_alt")
     st.markdown(chip_estado(f"Venta {venta.numero}", "exito"), unsafe_allow_html=True)
     estado_sync = ctx.storage.sync_status()
-    if estado_sync.pendientes > 0:
+    # Solo aplica con la base en la nube activa: en modo local `pendientes`
+    # cuenta cada guardado y el aviso salía siempre (falso positivo).
+    if getattr(ctx.storage, "sync_enabled", False) and estado_sync.pendientes > 0:
         st.warning(
             "La venta quedó guardada de forma segura, pero todavía no se publicó en la nube. "
             "Se reintentará automáticamente."
