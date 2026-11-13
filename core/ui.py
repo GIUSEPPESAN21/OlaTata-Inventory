@@ -20,7 +20,6 @@ importable en pruebas sin que Streamlit esté corriendo.
 """
 from __future__ import annotations
 
-import itertools
 import logging
 import uuid
 from contextlib import contextmanager
@@ -273,11 +272,44 @@ def estado_vacio(mensaje: str, sugerencia: str | None = None, *, icono: str = "s
 empty_state = estado_vacio
 
 
+DESARROLLADOR = {"marca": "SAVA", "nombre": "Joseph Sánchez", "telefono": "3222074527"}
+
+
+def _logo_sava_html(tamano_px: int = 18) -> str:
+    """Logo de SAVA en miniatura. Si existe `assets/brand/sava-logo.png`
+    se usa ese archivo; si no, un monograma "S" dorado provisional."""
+    ruta = logo_path("sava-logo.png")
+    if ruta:
+        import base64
+
+        b64 = base64.b64encode(Path(ruta).read_bytes()).decode("ascii")
+        return (f'<img class="ot-pie-pagina__logo" src="data:image/png;base64,{b64}" '
+                f'width="{tamano_px}" height="{tamano_px}" alt="SAVA">')
+    c = TOKENS["color"]
+    return (
+        f'<svg class="ot-pie-pagina__logo" width="{tamano_px}" height="{tamano_px}" viewBox="0 0 20 20" '
+        f'role="img" aria-label="SAVA"><circle cx="10" cy="10" r="9" fill="none" stroke="{c["dorado_brillo"]}" '
+        f'stroke-width="1.4"/><text x="10" y="14" text-anchor="middle" font-family="Playfair Display, Georgia, serif" '
+        f'font-size="11" font-weight="700" fill="{c["dorado_texto"]}">S</text></svg>'
+    )
+
+
 def pie_pagina() -> None:
+    """Firma discreta del desarrollador: logo mínimo, nombre y contacto."""
     import streamlit as st
 
     inyectar_identidad_visual()
-    st.markdown('<div class="ot-pie-pagina">Desarrollado por SAVA</div>', unsafe_allow_html=True)
+    d = DESARROLLADOR
+    tel = d["telefono"]
+    tel_legible = f"{tel[:3]} {tel[3:6]} {tel[6:]}"
+    st.markdown(
+        '<div class="ot-pie-pagina">'
+        + f'<div class="ot-pie-pagina__marca">{_logo_sava_html()}<span>Desarrollado por <b>{d["marca"]}</b></span></div>'
+        + f'<div class="ot-pie-pagina__contacto">{d["nombre"]} · '
+        + f'<a href="https://wa.me/57{tel}" target="_blank" rel="noopener">{tel_legible}</a></div>'
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 # --------------------------------------------------------- fondo / motivo
@@ -324,7 +356,21 @@ def brand_rings(tamano_px: int = 260) -> None:
 
 
 # ------------------------------------------------------------------ tarjeta
-_contador_tarjetas = itertools.count()
+_CONTADOR_TARJETAS_KEY = "_ot_contador_tarjetas"
+
+
+def _siguiente_numero_tarjeta() -> int:
+    """Número de tarjeta DENTRO de este rerun (0, 1, 2…). Antes era un
+    contador global que nunca se reiniciaba: cada clic daba claves nuevas
+    a todas las tarjetas, Streamlit las reconstruía desde cero y se
+    cerraban los desplegables, se perdía el foco y la pantalla "saltaba"
+    (hallazgo de la revisión de fluidez). `app.py` lo reinicia al inicio
+    de cada rerun, así la tarjeta N conserva siempre la misma clave."""
+    import streamlit as st
+
+    numero = st.session_state.get(_CONTADOR_TARJETAS_KEY, 0)
+    st.session_state[_CONTADOR_TARJETAS_KEY] = numero + 1
+    return numero
 
 
 @contextmanager
@@ -343,7 +389,7 @@ def card(*, acento: str = "superior", key: str | None = None):
 
     inyectar_identidad_visual()
     if key is None:
-        key = f"ot-card-{acento}-{next(_contador_tarjetas)}"
+        key = f"ot-card-{acento}-{_siguiente_numero_tarjeta()}"
     with st.container(border=True, key=key):
         yield
 
@@ -462,6 +508,7 @@ def reiniciar_identidad_visual_para_este_rerun() -> None:
     import streamlit as st
 
     st.session_state.pop(_IDENTIDAD_VISUAL_INYECTADA_KEY, None)
+    st.session_state[_CONTADOR_TARJETAS_KEY] = 0
 
 
 def encabezado_marca(
@@ -896,8 +943,10 @@ def enfocar_campo(etiqueta_aria: str) -> None:
     const doc = window.parent.document;
     const campo = doc.querySelector('input[aria-label=' + JSON.stringify({etiqueta}) + ']');
     const activo = doc.activeElement;
-    const ocupado = activo && activo !== campo && ["INPUT", "TEXTAREA", "SELECT"].includes(activo.tagName);
-    if (campo && !ocupado) {{ campo.focus(); return; }}
+    const libre = !activo || activo === doc.body || activo === campo;
+    // preventScroll: nunca mover la pantalla para enfocar (antes, al pulsar
+    // un botón abajo, la página saltaba hasta el buscador).
+    if (campo && libre) {{ campo.focus({{ preventScroll: true }}); return; }}
     if (!campo && intentos++ < 20) setTimeout(enfocar, 150);
   }}
   setTimeout(enfocar, 120);

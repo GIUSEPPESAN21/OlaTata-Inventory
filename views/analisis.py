@@ -51,16 +51,23 @@ def render(ctx: ViewContext) -> None:
     if not tiene_completo:
         st.caption("Vista de vendedor: ventas, unidades y tickets de tu turno. Sin costos ni ganancia.")
 
-    tab_hoy, tab_semana, tab_mes, tab_anteriores = st.tabs(["Hoy", "Semana", "Mes", "Meses anteriores"])
+    tab_hoy, tab_semana, tab_mes, tab_anteriores = st.tabs(
+        ["Hoy", "Semana", "Mes", "Meses anteriores"], key="analisis_pestana", on_change="rerun"
+    )
 
+    # Solo se calcula la pestaña visible (antes se calculaban las 4 en cada clic).
     with tab_hoy:
-        _render_hoy(ctx, hoy_local, rol, usuario_id, tiene_completo)
+        if tab_hoy.open:
+            _render_hoy(ctx, hoy_local, rol, usuario_id, tiene_completo)
     with tab_semana:
-        _render_semana(ctx, hoy_local, rol, usuario_id, tiene_completo)
+        if tab_semana.open:
+            _render_semana(ctx, hoy_local, rol, usuario_id, tiene_completo)
     with tab_mes:
-        _render_mes(ctx, hoy_local, rol, usuario_id, tiene_completo)
+        if tab_mes.open:
+            _render_mes(ctx, hoy_local, rol, usuario_id, tiene_completo)
     with tab_anteriores:
-        _render_meses_anteriores(ctx, hoy_local, rol)
+        if tab_anteriores.open:
+            _render_meses_anteriores(ctx, hoy_local, rol)
 
 
 def _kpi_row(kpis: dict, tiene_completo: bool) -> None:

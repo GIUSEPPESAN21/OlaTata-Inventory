@@ -56,21 +56,22 @@ def render(ctx: ViewContext) -> None:
     encabezado_pagina("Inventario", "Productos, mercancía y existencias", icono="inventory_2")
     guia("inventario")
 
-    tabs = st.tabs(
-        ["Productos", "Entrada de mercancía", "Conteo físico", "Importar inventario", "Etiquetas", "Integridad"]
-    )
-    with tabs[0]:
-        _tab_productos(ctx, rol)
-    with tabs[1]:
-        _tab_entrada(ctx, rol)
-    with tabs[2]:
-        _tab_conteo(ctx, rol)
-    with tabs[3]:
-        _tab_importar(ctx, rol)
-    with tabs[4]:
-        _tab_etiquetas(ctx, rol)
-    with tabs[5]:
-        _tab_integridad(ctx, rol)
+    # Pestañas con memoria (key + on_change): conservan la pestaña elegida
+    # entre clics y SOLO se ejecuta la visible (antes corrían las 6 en cada
+    # clic, incluida la generación del PDF de etiquetas).
+    secciones = [
+        ("Productos", _tab_productos),
+        ("Entrada de mercancía", _tab_entrada),
+        ("Conteo físico", _tab_conteo),
+        ("Importar inventario", _tab_importar),
+        ("Etiquetas", _tab_etiquetas),
+        ("Integridad", _tab_integridad),
+    ]
+    tabs = st.tabs([n for n, _ in secciones], key="inventario_pestana", on_change="rerun")
+    for tab, (_nombre, funcion) in zip(tabs, secciones):
+        with tab:
+            if tab.open:
+                funcion(ctx, rol)
 
 
 # --------------------------------------------------------------- Productos
@@ -139,7 +140,7 @@ def _tab_productos(ctx: ViewContext, rol: str) -> None:
             )
 
     with card(acento="izquierdo"):
-        with st.expander("Nuevo producto", icon=":material/add_box:"):
+        with st.expander("Nuevo producto", icon=":material/add_box:", key="inv_exp_nuevo_producto"):
             _form_nuevo_producto(ctx, rol)
 
     if not productos.empty:
@@ -621,7 +622,8 @@ def _tab_etiquetas(ctx: ViewContext, rol: str) -> None:
             "escala **100 % / tamaño real**, sin márgenes."
         )
         etiquetas_pdf_boton(pdf_bytes)
-        with st.expander("Avanzado: enviar directo a la impresora (TSPL)", icon=":material/terminal:"):
+        with st.expander("Avanzado: enviar directo a la impresora (TSPL)", icon=":material/terminal:",
+                         key="inv_exp_tspl"):
             st.caption(
                 "Si el driver de Windows recorta o escala las etiquetas, este archivo va directo a la "
                 "impresora sin driver (ver docs/IMPRESORAS.md). Es la misma imagen del PDF."
@@ -651,6 +653,7 @@ def _seccion_perfil_etiquetas(ctx: ViewContext, rol: str):
         base = etiquetas.PERFILES_PREDEFINIDOS.get(eleccion, guardado)
 
         with st.expander("Ajustar medidas (mídelas con una regla)", icon=":material/straighten:",
+                         key=f"inv_exp_medidas_{eleccion}",
                          expanded=eleccion == _PERSONALIZADO):
             c1, c2, c3 = st.columns(3)
             ancho = c1.number_input("Ancho etiqueta (mm)", 10.0, 120.0, float(base.ancho_mm), 0.5, key=f"etq_w_{eleccion}")

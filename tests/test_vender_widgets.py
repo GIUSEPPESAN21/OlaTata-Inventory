@@ -2,7 +2,7 @@
 Streamlit ignora el `value=` de un widget con `key` que ya tiene estado,
 así que los cambios hechos por el CÓDIGO al carrito/pagos se perdían:
 
-- "Completar con el total restante" dejaba el pago en $ 0 (no se podía
+- "Completar" dejaba el pago en $ 0 (no se podía
   cobrar sin escribir el monto a mano).
 - Escanear otra vez el mismo producto no sumaba la cantidad.
 
@@ -44,9 +44,17 @@ def _app(tmp_path) -> AppTest:
 
 
 def _agregar(at: AppTest, texto: str) -> None:
-    at.text_input[0].input(texto)
-    at.button(key="FormSubmitter:vender_buscar-Agregar al carrito").click().run()
+    """Escribe en el buscador en vivo. Un código exacto se agrega solo; un
+    nombre muestra resultados y se pulsa "Agregar" en el primero."""
+    antes = sum(linea["cantidad"] for linea in at.session_state["vender_carrito"]) if "vender_carrito" in at.session_state else 0
+    at.text_input(key="vender_q").input(texto).run()
     assert not at.exception
+    despues = sum(linea["cantidad"] for linea in at.session_state["vender_carrito"])
+    if despues == antes:
+        botones = [b for b in at.button if str(b.key or "").startswith("vender_add_")]
+        if botones:
+            botones[0].click().run()
+            assert not at.exception
 
 
 def _boton(at: AppTest, etiqueta: str):
@@ -56,7 +64,7 @@ def _boton(at: AppTest, etiqueta: str):
 def test_completar_con_el_total_restante_llena_el_monto_del_pago(tmp_path):
     at = _app(tmp_path)
     _agregar(at, "Bolso Regresion")
-    _boton(at, "Completar con el total restante").click().run()
+    _boton(at, "Completar").click().run()
     assert at.number_input(key="vender_pago_monto_0").value == 85000
     assert _boton(at, "Cobrar").disabled is False
 
@@ -72,7 +80,7 @@ def test_escanear_dos_veces_el_mismo_producto_suma_la_cantidad(tmp_path):
 def test_venta_completa_por_la_vista_descuenta_stock(tmp_path):
     at = _app(tmp_path)
     _agregar(at, "Bolso Regresion")
-    _boton(at, "Completar con el total restante").click().run()
+    _boton(at, "Completar").click().run()
     _boton(at, "Cobrar").click().run()
     assert not at.exception
     assert at.session_state["vender_recibo"] is not None
@@ -92,4 +100,15 @@ def test_lector_usb_codigo_interno_de_etiqueta_y_teclado_latino(tmp_path):
     _agregar(at, "ot'000001")
     assert at.session_state["vender_carrito"][0]["cantidad"] == 2
     _agregar(at, "99999999")
-    assert any("No se encontró" in e.value for e in at.error)
+    assert any("Ningún producto coincide" in m.value for m in at.markdown)
+    assert at.session_state["vender_carrito"][0]["cantidad"] == 2  # nada raro se agregó
+
+
+def test_busqueda_en_vivo_muestra_resultados_y_codigo_limpia_el_campo(tmp_path):
+    at = _app(tmp_path)
+    at.text_input(key="vender_q").input("regres").run()  # parte del nombre, sin Enter
+    assert [b.key for b in at.button if str(b.key or "").startswith("vender_add_")] == ["vender_add_OT-000001"]
+    assert at.session_state["vender_carrito"] == []  # un nombre NO se agrega solo
+    at.text_input(key="vender_q").input("7700000000999").run()  # el lector: código exacto
+    assert at.session_state["vender_carrito"][0]["cantidad"] == 1
+    assert at.text_input(key="vender_q").value == ""  # listo para el siguiente escaneo

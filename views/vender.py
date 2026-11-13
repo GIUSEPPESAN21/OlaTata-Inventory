@@ -1,11 +1,14 @@
 """Vista: Vender. Propiedad de A2 (VENTAS). Contrato: `render(ctx)`.
 
 Meta medible (§6): venta simple en <=4 pasos y <30s (buscar/escanear ->
-cantidad -> pagar -> confirmar). Patrón de escáner USB sano: `st.form`
-con `text_input` + `clear_on_submit=True`, Enter agrega al carrito si
-hay coincidencia exacta -- SIN JavaScript inyectado ni listeners de
-teclado frágiles. El carrito vive en `st.session_state` para sobrevivir
-a un F5 mientras la pestaña siga abierta.
+cantidad -> pagar -> confirmar).
+
+Diseño: dos columnas. Izquierda: búsqueda EN TIEMPO REAL (`live`: los
+resultados aparecen mientras se escribe, sin Enter) + carrito. Derecha:
+resumen fijo (descuento, canal, cliente/envío, total, pago y Cobrar), para
+casi no tener que desplazar la pantalla. El lector USB "teclea" el código
++ Enter: una coincidencia EXACTA por código se agrega sola y el campo se
+limpia. El carrito vive en `st.session_state`.
 """
 from __future__ import annotations
 
@@ -14,7 +17,8 @@ import uuid
 import streamlit as st
 
 from core import schema
-from core.etiquetas import id_desde_codigo_interno, normalizar_lectura_escaner
+from core.busqueda import buscar_productos, producto_por_codigo, stock_por_producto
+from core.etiquetas import codigo_para_producto
 from core.excel_safe import excel_safe
 from core.money import format_cop, parse_pesos
 from core.permissions import PermisoDenegadoError
@@ -105,15 +109,21 @@ def _escribir_estado_a_widgets() -> None:
 
 
 # ------------------------------------------------------------ callbacks
-def _cb_agregar(productos_activos) -> None:
-    _leer_widgets_al_estado()
-    texto = st.session_state.get("vender_busqueda_texto", "") or ""
-    fila = _buscar_producto(productos_activos, texto)
+def _cb_busqueda(productos_activos) -> None:
+    """Al escribir/escanear: si es un CÓDIGO exacto, se agrega solo y se
+    limpia el campo (flujo del lector USB). Si no, quedan los resultados."""
+    texto = st.session_state.get("vender_q", "") or ""
+    fila = producto_por_codigo(productos_activos, texto)
     if fila is None:
-        st.session_state["vender_busqueda_error"] = True
         return
-    st.session_state["vender_busqueda_error"] = False
+    _cb_agregar_producto(fila)
+    st.session_state["vender_q"] = ""
+
+
+def _cb_agregar_producto(fila) -> None:
+    _leer_widgets_al_estado()
     _agregar_al_carrito(fila)
+    st.session_state["vender_ultimo"] = str(fila["nombre"])
     _escribir_estado_a_widgets()
 
 
@@ -145,32 +155,12 @@ def _cb_completar_total(total_estimado: int) -> None:
 
 def _nueva_venta() -> None:
     _reiniciar_widgets_carrito()
+    for clave in [k for k in st.session_state.keys() if str(k).startswith(("vender_v_", "vender_q", "vender_ultimo"))]:
+        del st.session_state[clave]
     st.session_state.vender_carrito = []
     st.session_state.vender_idempotency_key = str(uuid.uuid4())
     st.session_state.vender_pagos = [{"metodo": "efectivo", "monto": 0}]
     st.session_state.vender_recibo = None
-
-
-def _buscar_producto(productos_df, texto: str):
-    """Busca por lo que escribió la persona o "tecleó" el lector USB:
-    código de barras propio, código interno de la etiqueta ("20000123"),
-    id ("OT-000123", también si llega como "OT'000123" por la distribución
-    latinoamericana del teclado) o nombre exacto (sin mayúsculas)."""
-    texto = normalizar_lectura_escaner(texto)
-    if not texto:
-        return None
-    codigos = productos_df["codigo_barras"].astype(str).str.strip()
-    por_codigo = productos_df[codigos == texto]
-    if not por_codigo.empty:
-        return por_codigo.iloc[0]
-    id_buscado = id_desde_codigo_interno(texto) or texto.upper()
-    por_id = productos_df[productos_df["id"].astype(str).str.upper() == id_buscado]
-    if not por_id.empty:
-        return por_id.iloc[0]
-    por_nombre = productos_df[productos_df["nombre"].astype(str).str.strip().str.lower() == texto.lower()]
-    if not por_nombre.empty:
-        return por_nombre.iloc[0]
-    return None
 
 
 def _agregar_al_carrito(fila) -> None:
@@ -193,7 +183,6 @@ def _agregar_al_carrito(fila) -> None:
 def render(ctx: ViewContext) -> None:
     _init_state()
     storage = ctx.storage
-    usuario = ctx.usuario
 
     if st.session_state.vender_recibo is not None:
         _mostrar_recibo(ctx)
@@ -211,103 +200,174 @@ def render(ctx: ViewContext) -> None:
         )
         return
     productos_activos = productos_df[productos_df["activo"] == True]  # noqa: E712
+    stock = stock_por_producto(storage.read_sheet(schema.STOCK))
+    sin_stock_permitido = (storage.get_config("permitir_vender_sin_stock") or "false").strip().lower() == "true"
 
-    with card(acento="superior"):
-        with st.form("vender_buscar", clear_on_submit=True):
-            st.text_input(
-                "Buscar por nombre, código o escanear", icon=":material/search:", key="vender_busqueda_texto"
+    col_izq, col_der = st.columns([7, 5], gap="large")
+    with col_izq:
+        _panel_busqueda(productos_activos, stock, sin_stock_permitido)
+        _panel_carrito(ctx)
+    with col_der:
+        _panel_resumen(ctx)
+
+
+def _panel_busqueda(productos_activos, stock: dict, sin_stock_permitido: bool) -> None:
+    with card(acento="superior", key="ot-card-vender-buscar"):
+        st.text_input(
+            "Buscar por nombre, código o escanear",
+            key="vender_q",
+            live="250ms",
+            placeholder="Escribe parte del nombre o el código… o escanea la etiqueta",
+            icon=":material/search:",
+            on_change=_cb_busqueda,
+            args=(productos_activos,),
+        )
+        # El lector de códigos "teclea" + Enter: el cursor queda listo aquí
+        # (sin mover la pantalla).
+        enfocar_campo("Buscar por nombre, código o escanear")
+        consulta = (st.session_state.get("vender_q") or "").strip()
+        if not consulta:
+            st.caption("Los resultados aparecen mientras escribes. Un código escaneado se agrega solo.")
+            return
+        resultados = buscar_productos(productos_activos, consulta)
+        if resultados.empty:
+            st.markdown(
+                chip_estado("Ningún producto coincide con la búsqueda", "alerta", icono="search_off"),
+                unsafe_allow_html=True,
             )
-            st.form_submit_button(
-                "Agregar al carrito",
-                use_container_width=True,
-                type="primary",
+            return
+        for _, fila in resultados.iterrows():
+            pid = str(fila["id"])
+            disponible = int(stock.get(pid, 0))
+            c1, c2, c3 = st.columns([5, 3, 2], vertical_alignment="center")
+            c1.markdown(
+                f"**{md_seguro(fila['nombre'])}**  \n"
+                f"<span class='ot-resultado__codigo'>{md_seguro(codigo_para_producto(pid, fila.get('codigo_barras')))}"
+                f" · {md_seguro(fila.get('categoria') or '')}</span>",
+                unsafe_allow_html=True,
+            )
+            precio = format_cop(parse_pesos(fila["precio"]))
+            estado = (
+                chip_estado(f"{disponible} disp.", "exito", icono="inventory_2") if disponible > 0
+                else chip_estado("Agotado", "error", icono="block")
+            )
+            c2.markdown(f'<span class="ot-precio-producto">{precio}</span><br>{estado}', unsafe_allow_html=True)
+            c3.button(
+                "Agregar",
+                key=f"vender_add_{pid}",
                 icon=":material/add_shopping_cart:",
-                on_click=_cb_agregar,
-                args=(productos_activos,),
+                type="primary",
+                use_container_width=True,
+                disabled=disponible <= 0 and not sin_stock_permitido,
+                on_click=_cb_agregar_producto,
+                args=(fila,),
             )
-    # El lector de códigos "teclea" + Enter: el cursor queda listo aquí.
-    enfocar_campo("Buscar por nombre, código o escanear")
-    if st.session_state.pop("vender_busqueda_error", False):
-        st.error("No se encontró ningún producto con ese nombre/código. Código: VEN-404.")
 
-    if not st.session_state.vender_carrito:
-        estado_vacio("El carrito está vacío.", "Busca o escanea un producto para empezar.", icono="shopping_cart")
-        return
 
-    with card(acento="izquierdo"):
-        titulo_seccion("Carrito")
-        for idx, linea in enumerate(st.session_state.vender_carrito):
-            col1, col2, col3, col4 = st.columns([3.2, 1.6, 1.6, 1.6])
-            col1.markdown(md_seguro(linea["nombre_snapshot"]))
+def _panel_carrito(ctx: ViewContext) -> None:
+    carrito = st.session_state.vender_carrito
+    unidades = sum(int(linea["cantidad"]) for linea in carrito)
+    with card(acento="izquierdo", key="ot-card-vender-carrito"):
+        titulo_seccion(f"Carrito · {unidades} {'unidad' if unidades == 1 else 'unidades'}" if carrito else "Carrito")
+        if not carrito:
+            st.caption("Vacío. Busca o escanea un producto para empezar.")
+            return
+        ultimo = st.session_state.get("vender_ultimo")
+        if ultimo:
+            st.markdown(chip_estado(f"Agregado: {md_seguro(ultimo)}", "exito"), unsafe_allow_html=True)
+        for idx, linea in enumerate(carrito):
+            col1, col2, col3, col4 = st.columns([4.2, 2.2, 2.4, 1], vertical_alignment="center")
+            col1.markdown(
+                f"**{md_seguro(linea['nombre_snapshot'])}**  \n"
+                f"<span class='ot-resultado__codigo'>{md_seguro(format_cop(linea['precio_unitario']))} c/u</span>",
+                unsafe_allow_html=True,
+            )
             clave_cant = f"vender_cant_{idx}"
             # `value=` solo si el widget aún no tiene estado: si se fijó
             # desde un callback, pasarlo también genera un aviso de Streamlit.
             inicial = {} if clave_cant in st.session_state else {"value": int(linea["cantidad"])}
-            nueva_cantidad = col2.number_input("Cant.", min_value=1, key=clave_cant, step=1, **inicial)
+            nueva_cantidad = col2.number_input(
+                "Cant.", min_value=1, key=clave_cant, step=1, label_visibility="collapsed", **inicial
+            )
             linea["cantidad"] = int(nueva_cantidad)
             col3.markdown(
                 f'<span class="ot-precio-producto">{format_cop(linea["precio_unitario"] * linea["cantidad"])}</span>',
                 unsafe_allow_html=True,
             )
             col4.button(
-                "Quitar",
+                "",
                 key=f"vender_del_{idx}",
                 icon=":material/delete:",
                 help="Quitar del carrito",
                 on_click=_cb_quitar_linea,
                 args=(idx,),
+                use_container_width=True,
             )
-        if not st.session_state.vender_carrito:  # se quitó la última línea
-            ctx.rerun()
 
-        subtotal = sum(l["precio_unitario"] * l["cantidad"] for l in st.session_state.vender_carrito)
-        st.caption(f"Subtotal: {format_cop(subtotal)}")
 
+def _panel_resumen(ctx: ViewContext) -> None:
+    storage = ctx.storage
+    usuario = ctx.usuario
+    carrito = st.session_state.vender_carrito
+    with card(acento="superior", key="ot-card-venta-resumen"):
+        titulo_seccion("Resumen")
+        if not carrito:
+            st.caption("Agrega productos para ver el total y cobrar.")
+            st.markdown(
+                '<div class="ot-total-carrito"><div class="ot-total-carrito__etiqueta">Total</div>'
+                f'<div class="ot-total-carrito__valor">{format_cop(0)}</div></div>',
+                unsafe_allow_html=True,
+            )
+            return
+
+        subtotal = sum(linea["precio_unitario"] * linea["cantidad"] for linea in carrito)
         col_desc1, col_desc2 = st.columns(2)
-        tipo_descuento = col_desc1.selectbox("Descuento", ["Sin descuento", "Porcentaje (%)", "Monto ($)"])
-        valor_descuento = 0
-        if tipo_descuento != "Sin descuento":
-            valor_descuento = col_desc2.number_input("Valor del descuento", min_value=0, value=0)
+        tipo_descuento = col_desc1.selectbox(
+            "Descuento", ["Sin descuento", "Porcentaje (%)", "Monto ($)"], key="vender_v_desc_tipo"
+        )
+        valor_descuento = col_desc2.number_input(
+            "Valor", min_value=0, value=0, key="vender_v_desc_valor",
+            disabled=tipo_descuento == "Sin descuento",
+        )
+        canal = st.selectbox(
+            "Canal", list(_CANALES_LABEL.keys()), format_func=lambda k: _CANALES_LABEL[k], key="vender_v_canal"
+        )
+        with st.expander("Cliente y envío (opcional)", icon=":material/person:", key="vender_v_exp_cliente"):
+            cliente_nombre = st.text_input("Nombre del cliente", key="vender_v_cliente")
+            cliente_telefono = st.text_input("Teléfono del cliente", key="vender_v_telefono")
+            envio_cobrado = st.number_input("Valor cobrado por el envío", min_value=0, value=0, key="vender_v_envio")
+            envio_ciudad = st.text_input("Ciudad destino", key="vender_v_ciudad")
+            envio_transportadora = st.text_input("Transportadora", key="vender_v_transportadora")
+            envio_guia = st.text_input("Número de guía", key="vender_v_guia")
 
-        canal = st.selectbox("Canal", list(_CANALES_LABEL.keys()), format_func=lambda k: _CANALES_LABEL[k])
+        if tipo_descuento == "Porcentaje (%)":
+            descuento_dict = {"tipo": "porcentaje", "valor": valor_descuento}
+            descuento_pesos = min(subtotal, round(subtotal * valor_descuento / 100))
+        elif tipo_descuento == "Monto ($)":
+            descuento_dict = {"tipo": "monto", "valor": valor_descuento}
+            descuento_pesos = min(subtotal, int(valor_descuento))
+        else:
+            descuento_dict = None
+            descuento_pesos = 0
+        total_estimado = subtotal - descuento_pesos + int(envio_cobrado)
 
-        with st.expander("Cliente (opcional)"):
-            cliente_nombre = st.text_input("Nombre del cliente", icon=":material/person:")
-            cliente_telefono = st.text_input("Teléfono del cliente", icon=":material/call:")
+        detalle = f"Subtotal {format_cop(subtotal)}"
+        if descuento_pesos:
+            detalle += f" · Descuento −{format_cop(descuento_pesos)}"
+        if envio_cobrado:
+            detalle += f" · Envío {format_cop(int(envio_cobrado))}"
+        st.markdown(
+            '<div class="ot-total-carrito">'
+            '<div class="ot-total-carrito__etiqueta">Total</div>'
+            f'<div class="ot-total-carrito__valor">{format_cop(total_estimado)}</div>'
+            f'<div class="ot-total-carrito__detalle">{detalle}</div>'
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
-        with st.expander("Envío nacional (opcional)"):
-            envio_cobrado = st.number_input("Valor cobrado por el envío", min_value=0, value=0)
-            envio_ciudad = st.text_input("Ciudad destino")
-            envio_transportadora = st.text_input("Transportadora")
-            envio_guia = st.text_input("Número de guía")
-
-    if tipo_descuento == "Porcentaje (%)":
-        descuento_dict = {"tipo": "porcentaje", "valor": valor_descuento}
-        descuento_pesos = min(subtotal, round(subtotal * valor_descuento / 100))
-    elif tipo_descuento == "Monto ($)":
-        descuento_dict = {"tipo": "monto", "valor": valor_descuento}
-        descuento_pesos = min(subtotal, int(valor_descuento))
-    else:
-        descuento_dict = None
-        descuento_pesos = 0
-
-    total_estimado = subtotal - descuento_pesos + int(envio_cobrado)
-
-    st.markdown(
-        f"""
-        <div class="ot-total-carrito">
-            <div class="ot-total-carrito__etiqueta">Total</div>
-            <div class="ot-total-carrito__valor">{format_cop(total_estimado)}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    with card(acento="izquierdo"):
-        titulo_seccion("Pago")
-        st.caption("Puedes dividir el pago en dos o más métodos.")
+        st.markdown("**Pago**")
         for idx, pago in enumerate(st.session_state.vender_pagos):
-            colm, colv, colx = st.columns([2, 2, 1])
+            colm, colv, colx = st.columns([5, 5, 2], vertical_alignment="bottom")
             metodos = list(_METODOS_LABEL.keys())
             clave_metodo = f"vender_pago_metodo_{idx}"
             clave_monto = f"vender_pago_monto_{idx}"
@@ -319,85 +379,86 @@ def render(ctx: ViewContext) -> None:
             pago["metodo"] = colm.selectbox(
                 "Método", metodos, format_func=lambda k: _METODOS_LABEL[k], key=clave_metodo, **inicial_metodo
             )
-            pago["monto"] = colv.number_input("Monto", min_value=0, key=clave_monto, **inicial_monto)
+            pago["monto"] = colv.number_input("Monto", min_value=0, step=1000, key=clave_monto, **inicial_monto)
             if len(st.session_state.vender_pagos) > 1:
                 colx.button(
-                    "Quitar",
-                    key=f"vender_pago_del_{idx}",
-                    icon=":material/delete:",
-                    on_click=_cb_quitar_pago,
-                    args=(idx,),
+                    "", key=f"vender_pago_del_{idx}", icon=":material/delete:", help="Quitar este método",
+                    on_click=_cb_quitar_pago, args=(idx,), use_container_width=True,
                 )
 
         colb1, colb2 = st.columns(2)
         colb1.button(
-            "Agregar método de pago", icon=":material/add:", use_container_width=True, on_click=_cb_agregar_pago
+            "Otro método", icon=":material/add:", use_container_width=True, on_click=_cb_agregar_pago,
+            help="Dividir el pago entre dos o más métodos",
         )
         colb2.button(
-            "Completar con el total restante",
+            "Completar",
             icon=":material/payments:",
             use_container_width=True,
+            help="Llena el último monto con lo que falta para completar el total",
             on_click=_cb_completar_total,
             args=(total_estimado,),
         )
 
         suma_pagos = sum(int(p["monto"]) for p in st.session_state.vender_pagos)
-        # Dos columnas en vez de un solo st.write con dos montos: Streamlit
-        # interpreta "$...$" como LaTeX inline, y dos montos formateados con
-        # "$ " en el mismo texto (R1) abren/cierran un bloque matemático sin
-        # querer, mostrando "**" literales en vez de negrita (capa visual).
-        col_total, col_pagado = st.columns(2)
-        col_total.markdown(f"Total: **{format_cop(total_estimado)}**")
-        col_pagado.markdown(f"Pagado: **{format_cop(suma_pagos)}**")
-        if suma_pagos != total_estimado:
-            st.warning("La suma de los pagos debe ser exactamente igual al total.")
-
-    if st.button(
-        "Cobrar",
-        type="primary",
-        use_container_width=True,
-        icon=":material/point_of_sale:",
-        disabled=(suma_pagos != total_estimado),
-    ):
-        try:
-            venta = confirmar_venta(
-                storage,
-                usuario.rol,
-                st.session_state.vender_idempotency_key,
-                items=[
-                    {
-                        "producto_id": l["producto_id"],
-                        "cantidad": l["cantidad"],
-                        "precio_unitario": l["precio_unitario"],
-                        "costo_unitario": l["costo_unitario"],
-                        "nombre_snapshot": l["nombre_snapshot"],
-                    }
-                    for l in st.session_state.vender_carrito
-                ],
-                pagos=[{"metodo": p["metodo"], "monto": int(p["monto"])} for p in st.session_state.vender_pagos],
-                descuento=descuento_dict,
-                envio={
-                    "cobrado": int(envio_cobrado),
-                    "ciudad": envio_ciudad,
-                    "transportadora": envio_transportadora,
-                    "guia": envio_guia,
-                },
-                canal=canal,
-                cliente={"nombre": cliente_nombre, "telefono": cliente_telefono},
-                vendedor_id=usuario.id,
-                vendedor_nombre=usuario.nombre,
-            )
-        except StockInsuficienteError as exc:
-            st.error(
-                f"No hay suficiente stock de '{exc.producto_id}' (disponible: {exc.disponible}). Código: VEN-STOCK."
-            )
-        except PagoInvalidoError:
-            st.error("La suma de los pagos no coincide con el total. Código: VEN-PAGO.")
-        except (VentaInvalidaError, PermisoDenegadoError) as exc:
-            st.error(f"No se pudo confirmar la venta: {exc} Código: VEN-001.")
+        diferencia = total_estimado - suma_pagos
+        # Indicador de ALTURA FIJA: antes un aviso aparecía/desaparecía y la
+        # pantalla "saltaba" al completar el pago.
+        if diferencia == 0:
+            estado_pago = chip_estado("Pago completo", "exito", icono="check_circle")
+        elif diferencia > 0:
+            estado_pago = chip_estado(f"Falta {format_cop(diferencia)}", "alerta", icono="pending")
         else:
-            st.session_state.vender_recibo = venta
-            ctx.rerun()
+            estado_pago = chip_estado(f"Sobra {format_cop(-diferencia)}: revisa los montos", "error")
+        st.markdown(f'<div class="ot-estado-pago">{estado_pago}</div>', unsafe_allow_html=True)
+
+        cobrar = st.button(
+            "Cobrar",
+            type="primary",
+            use_container_width=True,
+            icon=":material/point_of_sale:",
+            disabled=(diferencia != 0),
+            key="vender_cobrar",
+        )
+    if not cobrar:
+        return
+    try:
+        venta = confirmar_venta(
+            storage,
+            usuario.rol,
+            st.session_state.vender_idempotency_key,
+            items=[
+                {
+                    "producto_id": l["producto_id"],
+                    "cantidad": l["cantidad"],
+                    "precio_unitario": l["precio_unitario"],
+                    "costo_unitario": l["costo_unitario"],
+                    "nombre_snapshot": l["nombre_snapshot"],
+                }
+                for l in carrito
+            ],
+            pagos=[{"metodo": p["metodo"], "monto": int(p["monto"])} for p in st.session_state.vender_pagos],
+            descuento=descuento_dict,
+            envio={
+                "cobrado": int(envio_cobrado),
+                "ciudad": envio_ciudad,
+                "transportadora": envio_transportadora,
+                "guia": envio_guia,
+            },
+            canal=canal,
+            cliente={"nombre": cliente_nombre, "telefono": cliente_telefono},
+            vendedor_id=usuario.id,
+            vendedor_nombre=usuario.nombre,
+        )
+    except StockInsuficienteError as exc:
+        st.error(f"No hay suficiente stock de '{exc.producto_id}' (disponible: {exc.disponible}). Código: VEN-STOCK.")
+    except PagoInvalidoError:
+        st.error("La suma de los pagos no coincide con el total. Código: VEN-PAGO.")
+    except (VentaInvalidaError, PermisoDenegadoError) as exc:
+        st.error(f"No se pudo confirmar la venta: {exc} Código: VEN-001.")
+    else:
+        st.session_state.vender_recibo = venta
+        ctx.rerun()
 
 
 def _mostrar_recibo(ctx: ViewContext) -> None:

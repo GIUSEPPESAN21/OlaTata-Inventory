@@ -25,31 +25,28 @@ GUIAS: dict[str, Guia] = {
     "vender": Guia(
         "Cómo registrar una venta",
         (
-            "Escanea la etiqueta con el lector: el cursor ya está en el buscador, no hace falta hacer clic. "
-            "También puedes escribir el nombre exacto o el código y oprimir Enter.",
-            "Si escaneas el mismo producto otra vez, la cantidad sube sola. Puedes cambiarla o quitar la línea.",
-            "Elige el descuento (porcentaje o monto), el canal (Tienda, Instagram, WhatsApp) y, si aplica, "
-            "los datos del cliente y del envío.",
-            "En Pago elige el método. Para pagar con dos métodos usa «Agregar método de pago»; "
-            "«Completar con el total restante» llena el último monto.",
-            "Oprime «Cobrar». Luego puedes imprimir el recibo en la tirilla o enviarlo por WhatsApp.",
+            "Escanea la etiqueta con el lector: el producto entra solo al carrito (el cursor ya está en el buscador).",
+            "O escribe parte del nombre o del código: los resultados aparecen mientras escribes, con precio y "
+            "unidades disponibles. Oprime «Agregar» en el que quieras.",
+            "En el carrito ajusta la cantidad o quita una línea con el ícono de la papelera.",
+            "A la derecha elige descuento, canal y, si aplica, «Cliente y envío».",
+            "En Pago elige el método. «Completar» llena el monto; «Otro método» divide el pago.",
+            "Cuando diga «Pago completo», oprime «Cobrar» y luego imprime el recibo o envíalo por WhatsApp.",
         ),
-        "El botón «Cobrar» solo se activa cuando lo pagado es exactamente igual al total.",
+        "«Cobrar» solo se activa cuando lo pagado es exactamente igual al total.",
     ),
     # ------------------------------------------------------------- Ventas
     "ventas": Guia(
         "Cómo consultar, devolver o anular",
         (
-            "Elige el rango de fechas con «Desde» y «Hasta» (por defecto, la última semana).",
-            "Abre una venta para ver el detalle: productos, vendedor, canal y cliente.",
-            "«Devolución / cambio»: elige el producto, la cantidad, si vuelve al stock o se da de baja, "
-            "cómo se reembolsa y escribe el motivo.",
-            "«Anular venta» (administrador o maestro): deshace la venta completa y devuelve el stock. "
-            "El motivo es obligatorio y queda registrado.",
-            "«Editar datos» (solo maestro): corrige cliente, teléfono, canal, envío o nota. "
-            "Los productos y montos no se editan: para eso se anula o se hace una devolución.",
+            "Elige las fechas con «Desde» y «Hasta» (por defecto, la última semana).",
+            "Escribe en «Buscar» un número, cliente, teléfono, producto, código o vendedor: la tabla se filtra "
+            "mientras escribes.",
+            "Toca una venta de la tabla: abajo aparece su detalle.",
+            "Desde el detalle: «Reimprimir recibo», «Devolución / cambio», «Anular venta» (administrador o maestro, "
+            "con motivo) y «Editar datos» (solo maestro: cliente, teléfono, canal, envío o nota).",
         ),
-        "Cada vendedor ve solo sus propias ventas; el administrador ve todas.",
+        "Cada vendedor ve solo sus propias ventas; el administrador y el maestro ven todas.",
     ),
     # ---------------------------------------------------------- Inventario
     "inventario": Guia(

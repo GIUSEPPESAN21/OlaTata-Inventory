@@ -121,6 +121,29 @@ de la fecha.
   consolidados en `core/ui.py`, Material Symbols autoalojado). Estado
   actual de `main` en el momento de escribir esta documentación.
 
+## Fluidez: sin saltos ni animaciones, Vender y Ventas en tiempo real (2026-11-13)
+
+- **Bug principal corregido**: las tarjetas recibían una clave NUEVA en
+  cada clic (contador global que nunca se reiniciaba), así que Streamlit
+  las reconstruía: se cerraban desplegables, se perdía el foco y la
+  pantalla saltaba. Ahora la clave es estable por pantalla.
+- **Salto al buscador corregido**: el enfoque automático para el lector
+  movía la página hasta arriba al pulsar cualquier botón; ahora enfoca sin
+  desplazar y solo si no estás escribiendo en otro campo.
+- **Pestañas con memoria** (Inventario, Análisis, Ajustes): conservan la
+  pestaña elegida y solo ejecutan la visible (más rápido: antes corrían
+  todas en cada clic, incluido el PDF de etiquetas).
+- **Sin animaciones** ni "atenuado" de pantalla al hacer clic.
+- **Vender rediseñado**: búsqueda en tiempo real (sin Enter) por nombre,
+  código o código de barras, con precio y existencias; el lector agrega
+  solo; dos columnas con resumen fijo; indicador de pago de altura fija.
+- **Ventas rediseñado**: tabla con todas las ventas visibles, búsqueda en
+  vivo (número, cliente, teléfono, producto, código, vendedor), cifras del
+  período y detalle al tocar una fila con reimprimir/editar/anular/devolver.
+- **Pie de página**: "Desarrollado por SAVA" con logo mínimo, Joseph
+  Sánchez y 322 207 4527 (enlace a WhatsApp). Usa
+  `assets/brand/sava-logo.png` cuando exista.
+
 ## 3 artículos de prueba y "Empezar con el inventario real" (2026-11-13)
 
 - Los datos de prueba crean 3 productos ("[PRUEBA] Bolso tote rosa",

@@ -43,15 +43,22 @@
   --ot-sombra: var(--ot-sombra-1), var(--ot-sombra-2);
 }
 
-/* Respeta "prefers-reduced-motion": animaciones/transiciones <=200ms (C8) */
-* {
-  transition-duration: 150ms !important;
+/* Sin animaciones: los desplegables, menús, pestañas y ventanas aparecen
+   al instante (pedido del negocio: las animaciones se sentían lentas). */
+*, *::before, *::after {
+  transition: none !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  scroll-behavior: auto !important;
 }
-@media (prefers-reduced-motion: reduce) {
-  * {
-    animation-duration: 0.001ms !important;
-    transition-duration: 0.001ms !important;
-  }
+/* Streamlit "atenúa" la pantalla mientras procesa cada clic: eso es lo que
+   se veía como parpadeo. Se mantiene todo nítido. */
+[data-stale="true"] {
+  opacity: 1 !important;
+}
+/* Texto de ayuda en inglés de los formularios ("Press Enter to submit form") */
+[data-testid="InputInstructions"] {
+  display: none !important;
 }
 
 /* ------------------------------------------------------------- tipografía */
@@ -657,8 +664,33 @@ button:focus-visible {
 .ot-pie-pagina {
   text-align: center;
   color: var(--ot-texto-secundario);
-  font-size: 0.85rem;
-  padding-top: 1rem;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  padding-top: 0.75rem;
+  opacity: 0.9;
+}
+.ot-pie-pagina__marca {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.ot-pie-pagina__logo {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+.ot-pie-pagina__contacto {
+  font-size: 0.68rem;
+}
+.ot-pie-pagina a {
+  color: var(--ot-texto-secundario);
+  text-decoration: none;
+}
+.ot-pie-pagina a:hover {
+  color: var(--ot-primario);
+  text-decoration: underline;
 }
 
 /* --------------------------------------------------------------- pestañas */
@@ -800,4 +832,84 @@ button:focus-visible {
    centra con él (uniformidad geométrica). */
 [data-testid="stElementContainer"]:has(.ot-titulo-seccion) + [data-testid="stElementContainer"] [data-testid="stCaptionContainer"] {
   text-align: center;
+}
+
+
+/* ------------------------------------------------------------ Vender */
+.ot-resultado__codigo {
+  font-size: 0.8rem;
+  color: var(--ot-texto-secundario);
+  font-variant-numeric: tabular-nums;
+}
+.ot-total-carrito__detalle {
+  font-size: 0.85rem;
+  color: var(--ot-texto-secundario);
+  margin-top: 0.15rem;
+}
+/* Altura fija: el estado del pago cambia sin mover la pantalla. */
+.ot-estado-pago {
+  min-height: 2.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* El resumen (total, pago y Cobrar) se queda visible al bajar por el
+   carrito en pantallas grandes. */
+@media (min-width: 900px) {
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-ot-card-venta-resumen"]) {
+    align-items: stretch !important;
+  }
+  [data-testid="stColumn"]:has(> [data-testid="stVerticalBlock"] > [class*="st-key-ot-card-venta-resumen"]) > [data-testid="stVerticalBlock"] {
+    height: 100%;
+  }
+  [class*="st-key-ot-card-venta-resumen"] {
+    position: sticky;
+    top: 1rem;
+    z-index: 2;
+  }
+}
+
+/* ------------------------------------------------------------ Ventas */
+.ot-mini-kpi {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  background: var(--ot-superficie);
+  border: 1px solid var(--ot-rosa-veta);
+  border-radius: 14px;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 0.75rem;
+}
+.ot-mini-kpi .material-symbols-outlined {
+  color: var(--ot-primario);
+  font-size: 26px;
+}
+.ot-mini-kpi__valor {
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: var(--ot-tinta);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.ot-mini-kpi__etiqueta {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ot-texto-secundario);
+}
+
+/* Ajustes de espacio de Vender (columna de resumen más estrecha) */
+.ot-total-carrito {
+  container-type: inline-size;
+  padding: 0.8rem 0.75rem;
+}
+.ot-total-carrito .ot-total-carrito__valor {
+  white-space: nowrap;
+  font-size: clamp(1.8rem, 14cqi, 3rem) !important;
+  line-height: 1.1;
+}
+[class*="st-key-ot-card-vender-"] .ot-precio-producto {
+  font-size: 1.1rem;
+  white-space: nowrap;
 }

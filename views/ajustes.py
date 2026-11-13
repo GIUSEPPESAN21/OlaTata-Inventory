@@ -72,22 +72,15 @@ def render(ctx: ViewContext) -> None:
     nombres_tabs = ["Negocio", "Usuarios", "Sincronización", "Respaldo", "Integridad", "Cierre de mes"]
     if es_maestro:
         nombres_tabs.append("Datos de prueba")
-    tabs = st.tabs(nombres_tabs)
-    with tabs[0]:
-        _tab_negocio(ctx)
-    with tabs[1]:
-        _tab_usuarios(ctx)
-    with tabs[2]:
-        _tab_sincronizacion(ctx)
-    with tabs[3]:
-        _tab_respaldo(ctx)
-    with tabs[4]:
-        _tab_integridad(ctx)
-    with tabs[5]:
-        _tab_cierre_mes(ctx)
+    funciones = [_tab_negocio, _tab_usuarios, _tab_sincronizacion, _tab_respaldo, _tab_integridad, _tab_cierre_mes]
     if es_maestro:
-        with tabs[6]:
-            _tab_datos_prueba(ctx)
+        funciones.append(_tab_datos_prueba)
+    # Pestañas con memoria: conservan la elegida y solo ejecutan la visible.
+    tabs = st.tabs(nombres_tabs, key="ajustes_pestana", on_change="rerun")
+    for tab, funcion in zip(tabs, funciones):
+        with tab:
+            if tab.open:
+                funcion(ctx)
 
 
 # ------------------------------------------------------------- negocio
