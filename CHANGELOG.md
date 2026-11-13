@@ -121,6 +121,25 @@ de la fecha.
   consolidados en `core/ui.py`, Material Symbols autoalojado). Estado
   actual de `main` en el momento de escribir esta documentación.
 
+## Rol maestro, edición de usuarios y ventas, datos de prueba (2026-11-13)
+
+- **Rol "maestro"** (`core/permissions.py`): todo lo del administrador y
+  del vendedor (calculado, nunca se queda atrás) + editar usuarios, editar
+  ventas y datos de prueba. El primer administrador del negocio
+  (`giuseppesan`) pasa a maestro automáticamente al abrir la app.
+  Ningún administrador puede desactivarlo, restablecer su clave ni editarlo.
+- **Editar usuarios** (solo maestro): nombre, usuario y rol; si cambia el
+  usuario o el rol se cierran sus sesiones.
+- **Editar datos de una venta** (solo maestro): cliente, teléfono, canal,
+  envío y nota. Productos y montos NO (para eso: anular o devolución).
+  La venta ahora muestra teléfono, envío y nota.
+- **Datos de prueba** (Ajustes → Datos de prueba, solo maestro): crea
+  prueba.admin, prueba.vendedor, "[PRUEBA] Bolso de prueba" y una venta
+  simulada con las funciones reales; "Eliminar" lo quita todo en una sola
+  transacción sin tocar datos reales (y se niega si hay una venta real
+  mezclada).
+- Todo queda en el registro de seguridad.
+
 ## Títulos uniformes, guías de uso y seguridad reforzada (2026-11-13)
 
 - **Diseño**: todos los títulos centrados (página, subtítulo, secciones,

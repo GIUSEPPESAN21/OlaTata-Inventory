@@ -16,7 +16,7 @@ import streamlit as st
 
 from core import auth, schema, seguridad
 from core.excel_safe import TextoInvalidoError, excel_safe
-from core.permissions import PermisoDenegadoError, requerir
+from core.permissions import MAESTRO, PermisoDenegadoError, nombre_rol, requerir, tiene_capacidad
 from core.sincronizacion import (
     OPCION_CONSERVAR_LOCAL,
     OPCION_USAR_NUBE,
@@ -68,9 +68,11 @@ def render(ctx: ViewContext) -> None:
 
     encabezado_pagina("Ajustes", "Negocio, usuarios, sincronización y respaldo.", icono="settings")
     guia("ajustes")
-    tabs = st.tabs(
-        ["Negocio", "Usuarios", "Sincronización", "Respaldo", "Integridad", "Cierre de mes"]
-    )
+    es_maestro = tiene_capacidad(ctx.usuario.rol, "datos_prueba")
+    nombres_tabs = ["Negocio", "Usuarios", "Sincronización", "Respaldo", "Integridad", "Cierre de mes"]
+    if es_maestro:
+        nombres_tabs.append("Datos de prueba")
+    tabs = st.tabs(nombres_tabs)
     with tabs[0]:
         _tab_negocio(ctx)
     with tabs[1]:
@@ -83,6 +85,9 @@ def render(ctx: ViewContext) -> None:
         _tab_integridad(ctx)
     with tabs[5]:
         _tab_cierre_mes(ctx)
+    if es_maestro:
+        with tabs[6]:
+            _tab_datos_prueba(ctx)
 
 
 # ------------------------------------------------------------- negocio
@@ -262,14 +267,19 @@ def _fila_usuario(ctx: ViewContext, fila) -> None:
     activo = bool(fila["activo"])
     col1, col2, col3 = st.columns([3, 2, 3])
     with col1:
-        etiqueta_rol = "Administrador" if fila["rol"] == "admin" else "Vendedor"
-        st.markdown(f"**{md_seguro(fila['nombre'])}** ({md_seguro(fila['usuario'])}) — {etiqueta_rol}")
+        st.markdown(f"**{md_seguro(fila['nombre'])}** ({md_seguro(fila['usuario'])}) — {nombre_rol(fila['rol'])}")
     with col2:
         if activo:
             st.markdown(chip_estado("Activo", "exito"), unsafe_allow_html=True)
         else:
             st.markdown(chip_estado("Inactivo", "error", icono="pause_circle"), unsafe_allow_html=True)
     with col3:
+        es_cuenta_maestra = fila["rol"] == MAESTRO
+        if tiene_capacidad(ctx.usuario.rol, "editar_usuarios"):
+            _popover_editar_usuario(ctx, fila)
+        if es_cuenta_maestra:
+            st.caption("Cuenta maestra: no se puede desactivar.")
+            return
         clave_mostrar_confirmacion = f"ajustes_confirmar_{fila['id']}"
         accion = "Desactivar" if activo else "Activar"
         if st.button(accion, key=f"ajustes_btn_{fila['id']}", use_container_width=True):
@@ -304,6 +314,102 @@ def _fila_usuario(ctx: ViewContext, fila) -> None:
                     else:
                         st.success("Clave restablecida. Cópiala ahora: no se volverá a mostrar.")
                         st.code(clave, language=None)
+
+
+def _popover_editar_usuario(ctx: ViewContext, fila) -> None:
+    """Solo el maestro: cambiar nombre, usuario y rol de una cuenta."""
+    es_cuenta_maestra = fila["rol"] == MAESTRO
+    with st.popover("Editar", icon=":material/edit:", use_container_width=True):
+        with st.form(f"ajustes_editar_{fila['id']}"):
+            nombre = st.text_input("Nombre completo", value=str(fila["nombre"]))
+            usuario = st.text_input("Usuario", value=str(fila["usuario"]))
+            if es_cuenta_maestra:
+                st.caption("Rol: Maestro (no se cambia).")
+                rol = None
+            else:
+                opciones = ["vendedor", "admin"]
+                rol = st.selectbox(
+                    "Rol", opciones, index=opciones.index(fila["rol"]) if fila["rol"] in opciones else 0,
+                    format_func=nombre_rol,
+                )
+            guardar = st.form_submit_button("Guardar cambios", type="primary", use_container_width=True)
+        if guardar:
+            try:
+                with ctx.storage.transaction() as tx:
+                    cambios = seguridad.editar_usuario(
+                        tx, ctx.usuario.rol, ctx.usuario.id, fila["id"], nombre=nombre, usuario=usuario, rol=rol
+                    )
+            except (PermisoDenegadoError, ValueError) as exc:
+                st.error(str(exc))
+            except Exception as exc:  # nunca una traza visible
+                mensaje, _codigo = mensaje_error_amable(exc, contexto="editar_usuario")
+                st.error(mensaje)
+            else:
+                if not cambios:
+                    st.info("No había cambios.")
+                elif fila["id"] == ctx.usuario.id and "usuario" in cambios:
+                    st.success("Guardado. Como cambiaste tu usuario, vuelve a ingresar con el nuevo.")
+                    ctx.rerun()
+                else:
+                    st.success("Cambios guardados." + (" Sus sesiones abiertas se cerraron." if {"usuario", "rol"} & set(cambios) else ""))
+                    ctx.rerun()
+
+
+def _tab_datos_prueba(ctx: ViewContext) -> None:
+    """Solo el maestro: crear o eliminar los datos de prueba."""
+    guia("ajustes_datos_prueba")
+    from core import datos_prueba
+
+    with card(acento="superior"):
+        titulo_seccion("Datos de prueba")
+        if datos_prueba.hay_datos_prueba(ctx.storage):
+            st.markdown(chip_estado("Hay datos de prueba en la base", "alerta", icono="science"), unsafe_allow_html=True)
+            st.caption(
+                "Usuarios prueba.admin y prueba.vendedor, el producto «[PRUEBA] Bolso de prueba» y sus ventas. "
+                "Elimínalos antes de empezar a vender de verdad: afectan las cifras de Análisis."
+            )
+            confirmar = st.text_input("Escribe ELIMINAR para confirmar", key="ajustes_prueba_confirmar")
+            if st.button("Eliminar datos de prueba", icon=":material/delete:", use_container_width=True):
+                if not confirmacion_coincide("ELIMINAR", confirmar):
+                    st.error("Escribe ELIMINAR para confirmar.")
+                    return
+                try:
+                    quitadas = datos_prueba.eliminar_datos_prueba(ctx.storage, ctx.usuario.rol, ctx.usuario.id)
+                except (PermisoDenegadoError, ValueError) as exc:
+                    st.error(str(exc))
+                except Exception as exc:
+                    mensaje, _codigo = mensaje_error_amable(exc, contexto="eliminar_datos_prueba")
+                    st.error(mensaje)
+                else:
+                    st.session_state.pop("ajustes_prueba_claves", None)
+                    st.success(f"Datos de prueba eliminados ({sum(quitadas.values())} registros).")
+                    ctx.rerun()
+        else:
+            st.caption(
+                "Crea dos usuarios de prueba (administrador y vendedor), un producto «[PRUEBA] Bolso de prueba» "
+                "con 10 unidades y una venta simulada de 2 unidades, para probar la app sin tocar datos reales."
+            )
+            if st.button("Crear datos de prueba", type="primary", icon=":material/science:", use_container_width=True):
+                try:
+                    resultado = datos_prueba.crear_datos_prueba(ctx.storage, ctx.usuario.rol, ctx.usuario.id)
+                except (PermisoDenegadoError, ValueError) as exc:
+                    st.error(str(exc))
+                except Exception as exc:
+                    mensaje, _codigo = mensaje_error_amable(exc, contexto="crear_datos_prueba")
+                    st.error(mensaje)
+                else:
+                    st.session_state["ajustes_prueba_claves"] = resultado
+                    ctx.rerun()
+
+        resultado = st.session_state.get("ajustes_prueba_claves")
+        if resultado:
+            st.success(
+                f"Listo: producto {resultado['producto_id']} y venta {resultado['venta_numero']} creados. "
+                "Anota estas claves AHORA: no se volverán a mostrar."
+            )
+            for usuario, clave in resultado["usuarios"].items():
+                st.markdown(f"**{md_seguro(usuario)}**")
+                st.code(clave, language=None)
 
 
 def _alternar_activo(ctx: ViewContext, storage, fila, activo_actual: bool) -> None:

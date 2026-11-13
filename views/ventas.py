@@ -7,12 +7,15 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import pandas as pd
 import streamlit as st
 
 from core import schema
+from core.edicion_ventas import editar_venta
 from core.money import format_cop
 from core.permissions import PermisoDenegadoError, tiene_capacidad
 from core.returns import DevolucionInvalidaError, VentaNoEncontradaError, anular_venta, registrar_devolucion_cambio
+from core.schema import CANALES_VENTA
 from core.timeutil import local_date, now_utc
 from core.ui import (
     card,
@@ -21,6 +24,7 @@ from core.ui import (
     estado_vacio,
     guia,
     md_seguro,
+    mensaje_error_amable,
 )
 from views import ViewContext
 
@@ -81,8 +85,18 @@ def _fila_venta(ctx: ViewContext, venta) -> None:
         )
         st.markdown(f"Vendedor: {md_seguro(venta['vendedor_nombre'])}")
         st.markdown(f"Canal: {md_seguro(venta['canal'])}")
-        if venta["cliente_nombre"]:
-            st.markdown(f"Cliente: {md_seguro(venta['cliente_nombre'])}")
+        def _hay(campo):
+            valor = venta.get(campo, "")
+            return "" if pd.isna(valor) else str(valor).strip()
+
+        if _hay("cliente_nombre"):
+            telefono = f" · {md_seguro(_hay('cliente_telefono'))}" if _hay("cliente_telefono") else ""
+            st.markdown(f"Cliente: {md_seguro(_hay('cliente_nombre'))}{telefono}")
+        envio = [x for x in (_hay("envio_ciudad"), _hay("envio_transportadora"), _hay("envio_guia")) if x]
+        if envio:
+            st.markdown("Envío: " + " · ".join(md_seguro(x) for x in envio))
+        if _hay("nota"):
+            st.markdown(f"Nota: {md_seguro(_hay('nota'))}")
 
         items_df = storage.read_sheet(schema.VENTA_ITEMS)
         items_venta = items_df[items_df["venta_id"] == venta["id"]]
@@ -95,7 +109,12 @@ def _fila_venta(ctx: ViewContext, venta) -> None:
             st.error(f"Anulada. Motivo: {md_seguro(venta['anulada_motivo'])}")
             return
 
-        col1, col2 = st.columns(2)
+        puede_editar = tiene_capacidad(usuario.rol, "editar_venta")
+        cols = st.columns(3 if puede_editar else 2)
+        col1, col2 = cols[0], cols[1]
+        if puede_editar:
+            with cols[2].popover("Editar datos", icon=":material/edit:", use_container_width=True):
+                _formulario_edicion(ctx, venta)
 
         if tiene_capacidad(usuario.rol, "anular_venta"):
             with col1.popover("Anular venta", icon=":material/cancel:", use_container_width=True):
@@ -104,6 +123,53 @@ def _fila_venta(ctx: ViewContext, venta) -> None:
         if tiene_capacidad(usuario.rol, "devolucion_cambio"):
             with col2.popover("Devolución / cambio", icon=":material/keyboard_return:", use_container_width=True):
                 _formulario_devolucion(ctx, venta, items_venta)
+
+
+def _formulario_edicion(ctx: ViewContext, venta) -> None:
+    """Solo el maestro: datos de la venta que no cambian dinero ni stock."""
+    st.caption(
+        "Para cambiar productos, cantidades o montos usa «Anular venta» o «Devolución / cambio»: "
+        "así la caja y el inventario siguen cuadrando."
+    )
+
+    def _v(campo):
+        valor = venta.get(campo, "")
+        return "" if pd.isna(valor) else str(valor)
+
+    canales = sorted(CANALES_VENTA)
+    with st.form(f"editar_venta_{venta['id']}"):
+        cliente = st.text_input("Cliente", value=_v("cliente_nombre"))
+        telefono = st.text_input("Teléfono del cliente", value=_v("cliente_telefono"))
+        canal = st.selectbox(
+            "Canal", canales, index=canales.index(_v("canal")) if _v("canal") in canales else 0,
+            format_func=lambda c: {"tienda": "Tienda", "instagram": "Instagram", "whatsapp": "WhatsApp"}.get(c, c),
+        )
+        ciudad = st.text_input("Ciudad del envío", value=_v("envio_ciudad"))
+        transportadora = st.text_input("Transportadora", value=_v("envio_transportadora"))
+        guia_envio = st.text_input("Número de guía", value=_v("envio_guia"))
+        nota = st.text_area("Nota", value=_v("nota"))
+        guardar = st.form_submit_button("Guardar cambios", type="primary", use_container_width=True)
+    if guardar:
+        try:
+            cambiados = editar_venta(
+                ctx.storage, ctx.usuario.rol, ctx.usuario.id, venta["id"],
+                {
+                    "cliente_nombre": cliente, "cliente_telefono": telefono, "canal": canal,
+                    "envio_ciudad": ciudad, "envio_transportadora": transportadora, "envio_guia": guia_envio,
+                    "nota": nota,
+                },
+            )
+        except (PermisoDenegadoError, ValueError) as exc:
+            st.error(str(exc))
+        except Exception as exc:  # nunca una traza visible
+            mensaje, _codigo = mensaje_error_amable(exc, contexto="editar_venta")
+            st.error(mensaje)
+        else:
+            if cambiados:
+                st.success("Venta actualizada. El cambio quedó en el registro de seguridad.")
+                ctx.rerun()
+            else:
+                st.info("No había cambios.")
 
 
 def _formulario_anulacion(ctx: ViewContext, venta) -> None:

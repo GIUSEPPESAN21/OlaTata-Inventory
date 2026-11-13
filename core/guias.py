@@ -44,8 +44,10 @@ GUIAS: dict[str, Guia] = {
             "Abre una venta para ver el detalle: productos, vendedor, canal y cliente.",
             "«Devolución / cambio»: elige el producto, la cantidad, si vuelve al stock o se da de baja, "
             "cómo se reembolsa y escribe el motivo.",
-            "«Anular venta» (solo administrador): deshace la venta completa y devuelve el stock. "
+            "«Anular venta» (administrador o maestro): deshace la venta completa y devuelve el stock. "
             "El motivo es obligatorio y queda registrado.",
+            "«Editar datos» (solo maestro): corrige cliente, teléfono, canal, envío o nota. "
+            "Los productos y montos no se editan: para eso se anula o se hace una devolución.",
         ),
         "Cada vendedor ve solo sus propias ventas; el administrador ve todas.",
     ),
@@ -159,6 +161,8 @@ GUIAS: dict[str, Guia] = {
             "Al crearla, entrega la clave temporal en persona: el sistema le pedirá cambiarla al primer ingreso.",
             "Si alguien deja de trabajar en el negocio, desactiva su cuenta: sale de inmediato y conserva su historial.",
             "«Restablecer clave» genera una nueva clave temporal y cierra todas sus sesiones abiertas.",
+            "«Editar» (solo maestro): cambia nombre, usuario o rol. Si cambia el usuario o el rol, "
+            "esa persona debe volver a ingresar.",
         ),
         "Las claves deben tener al menos 10 caracteres, con letras y números.",
     ),
@@ -171,6 +175,18 @@ GUIAS: dict[str, Guia] = {
             "«Conflicto»: la base en GitHub cambió por fuera de la app. Elige qué versión conservar y escribe "
             "CONFIRMAR. Ninguna opción borra datos.",
         ),
+    ),
+    "ajustes_datos_prueba": Guia(
+        "Datos de prueba (solo maestro)",
+        (
+            "«Crear datos de prueba» agrega prueba.admin, prueba.vendedor, un producto «[PRUEBA] Bolso de prueba» "
+            "y una venta simulada de 2 unidades.",
+            "Anota las dos claves que aparecen: se muestran una sola vez.",
+            "Cierra sesión y entra con cada usuario de prueba para ver qué puede hacer cada rol.",
+            "Al terminar, escribe ELIMINAR y oprime «Eliminar datos de prueba»: se borra todo lo de prueba "
+            "y la base queda solo con los datos reales.",
+        ),
+        "Mientras existan, la venta de prueba suma en Análisis. Elimínalos antes de empezar a vender de verdad.",
     ),
     "ajustes_respaldo": Guia(
         "Respaldo",

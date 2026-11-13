@@ -25,7 +25,7 @@ import pandas as pd
 
 from core import auth, schema
 from core.excel_safe import excel_safe
-from core.permissions import ADMIN, requerir
+from core.permissions import ADMIN, MAESTRO, ROLES_ADMINISTRATIVOS, VENDEDOR, PermisoDenegadoError, requerir
 from core.timeutil import now_utc, parse_iso_utc, to_iso_utc
 
 __all__ = [
@@ -38,6 +38,8 @@ __all__ = [
     "eventos_recientes",
     "restablecer_password",
     "cambiar_estado_usuario",
+    "editar_usuario",
+    "asegurar_maestro",
     "pausa_tras_fallos",
     "sesion_excede_maximo",
 ]
@@ -147,6 +149,7 @@ def restablecer_password(tx, rol_llamador: str | None, llamador_id: str | None, 
         raise ValueError("Para cambiar tu propia clave usa la opción de cambio de contraseña.")
     df = tx.read_sheet(schema.USUARIOS)
     fila = _fila_usuario(df, usuario_id)
+    _proteger_maestro(fila, rol_llamador, "restablecer la clave del maestro")
     clave = generar_password_temporal()
     coincide = df["id"] == usuario_id
     df.loc[coincide, "password_hash"] = auth.hash_password(clave)
@@ -156,6 +159,11 @@ def restablecer_password(tx, rol_llamador: str | None, llamador_id: str | None, 
     tx.write_sheet(schema.USUARIOS, df)
     registrar_evento(tx, llamador_id, "restablecer_clave", f"usuario={fila['usuario']}")
     return clave
+
+
+def _proteger_maestro(fila: pd.Series, rol_llamador: str | None, accion: str) -> None:
+    if fila["rol"] == MAESTRO and rol_llamador != MAESTRO:
+        raise PermisoDenegadoError(str(rol_llamador), accion)
 
 
 def cambiar_estado_usuario(
@@ -170,14 +178,92 @@ def cambiar_estado_usuario(
     if not activo:
         if usuario_id == llamador_id:
             raise ValueError("No puedes desactivar tu propia cuenta.")
-        admins_activos = df[(df["rol"] == ADMIN) & (df["activo"].astype(bool)) & (df["id"] != usuario_id)]
-        if fila["rol"] == ADMIN and admins_activos.empty:
+        if fila["rol"] == MAESTRO:
+            raise ValueError("La cuenta maestra no se puede desactivar.")
+        es_admin = df["rol"].isin(ROLES_ADMINISTRATIVOS)
+        admins_activos = df[es_admin & (df["activo"].astype(bool)) & (df["id"] != usuario_id)]
+        if fila["rol"] in ROLES_ADMINISTRATIVOS and admins_activos.empty:
             raise ValueError("Debe quedar al menos un administrador activo.")
     coincide = df["id"] == usuario_id
     df.loc[coincide, "activo"] = activo
     df.loc[coincide, "updated_at"] = to_iso_utc(now_utc())
     tx.write_sheet(schema.USUARIOS, df)
     registrar_evento(tx, llamador_id, "activar_usuario" if activo else "desactivar_usuario", f"usuario={fila['usuario']}")
+
+
+def editar_usuario(
+    tx,
+    rol_llamador: str | None,
+    llamador_id: str | None,
+    usuario_id: str,
+    *,
+    nombre: str | None = None,
+    usuario: str | None = None,
+    rol: str | None = None,
+) -> list[str]:
+    """Solo el MAESTRO: cambia nombre, usuario y/o rol (administrador o
+    vendedor) de otra cuenta. Si cambia el usuario o el rol, se cierran sus
+    sesiones abiertas para que vuelva a entrar con los permisos nuevos.
+    Devuelve la lista de campos cambiados."""
+    requerir(rol_llamador, "editar_usuarios")
+    df = tx.read_sheet(schema.USUARIOS)
+    fila = _fila_usuario(df, usuario_id)
+    coincide = df["id"] == usuario_id
+    cambios: list[str] = []
+
+    if nombre is not None and nombre.strip() != str(fila["nombre"]):
+        nombre_seguro = excel_safe(nombre.strip(), max_length=120, field_name="nombre")
+        if not nombre_seguro:
+            raise ValueError("El nombre no puede quedar vacío.")
+        df.loc[coincide, "nombre"] = nombre_seguro
+        cambios.append("nombre")
+    if usuario is not None and usuario.strip() != str(fila["usuario"]):
+        error = validar_nombre_usuario(usuario)
+        if error:
+            raise ValueError(error)
+        if (df.loc[~coincide, "usuario"].astype(str).str.lower() == usuario.strip()).any():
+            raise ValueError(f"El usuario '{usuario.strip()}' ya existe.")
+        df.loc[coincide, "usuario"] = usuario.strip()
+        cambios.append("usuario")
+    if rol is not None and rol != fila["rol"]:
+        if fila["rol"] == MAESTRO:
+            raise ValueError("El rol del maestro no se cambia (siempre debe existir uno).")
+        if rol not in (ADMIN, VENDEDOR):
+            raise ValueError("El rol debe ser Administrador o Vendedor.")
+        if fila["rol"] in ROLES_ADMINISTRATIVOS and rol == VENDEDOR:
+            otros = df[df["rol"].isin(ROLES_ADMINISTRATIVOS) & df["activo"].astype(bool) & ~coincide]
+            if otros.empty:
+                raise ValueError("Debe quedar al menos un administrador activo.")
+        df.loc[coincide, "rol"] = rol
+        cambios.append("rol")
+    if not cambios:
+        return []
+    if "usuario" in cambios or "rol" in cambios:
+        df.loc[coincide, "session_epoch"] = df.loc[coincide, "session_epoch"].astype(int) + 1
+    df.loc[coincide, "updated_at"] = to_iso_utc(now_utc())
+    tx.write_sheet(schema.USUARIOS, df)
+    registrar_evento(tx, llamador_id, "editar_usuario", f"usuario={fila['usuario']} cambios={','.join(cambios)}")
+    return cambios
+
+
+def asegurar_maestro(tx) -> str | None:
+    """Si no hay ningún maestro activo, promueve al PRIMER administrador
+    creado (el dueño, quien hizo el primer arranque). Devuelve el id
+    promovido o `None` si no hizo falta. Idempotente."""
+    df = tx.read_sheet(schema.USUARIOS)
+    if df.empty or ((df["rol"] == MAESTRO) & df["activo"].astype(bool)).any():
+        return None
+    admins = df[(df["rol"] == ADMIN) & df["activo"].astype(bool)].sort_values("id")
+    if admins.empty:
+        return None
+    usuario_id = str(admins.iloc[0]["id"])
+    coincide = df["id"] == usuario_id
+    df.loc[coincide, "rol"] = MAESTRO
+    df.loc[coincide, "session_epoch"] = df.loc[coincide, "session_epoch"].astype(int) + 1
+    df.loc[coincide, "updated_at"] = to_iso_utc(now_utc())
+    tx.write_sheet(schema.USUARIOS, df)
+    registrar_evento(tx, "sistema", "asignar_maestro", f"usuario={admins.iloc[0]['usuario']}")
+    return usuario_id
 
 
 # ------------------------------------------------------------- sesiones

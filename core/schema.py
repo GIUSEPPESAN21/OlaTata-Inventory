@@ -249,7 +249,7 @@ METODOS_PAGO = {
 
 CANALES_VENTA = {"tienda", "instagram", "whatsapp"}
 
-ROLES = {"admin", "vendedor"}
+ROLES = {"maestro", "admin", "vendedor"}
 
 SEDE_PRINCIPAL = "principal"
 

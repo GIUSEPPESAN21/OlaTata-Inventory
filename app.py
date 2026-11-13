@@ -28,7 +28,7 @@ from core import auth, schema, seguridad
 from core.config import DEFAULT_DB_PATH, safe_secret
 from core.config_inicial import claves_faltantes, completar_config_faltante
 from core.demo_mode import demo_activo, render_aviso_datos_prueba
-from core.permissions import ADMIN, PermisoDenegadoError
+from core.permissions import MAESTRO, PermisoDenegadoError, nombre_rol
 from core.storage import BaseDeDatosNoDisponibleError, Storage
 from core.timeutil import now_utc, parse_iso_utc, to_iso_utc
 from core.ui import (
@@ -163,6 +163,11 @@ def _autorreparar_config(storage) -> None:
         if claves_faltantes(storage):
             with storage.transaction() as tx:
                 completar_config_faltante(tx)
+        # Debe existir un maestro: si no, el primer administrador lo es.
+        usuarios = storage.read_sheet(schema.USUARIOS)
+        if not ((usuarios["rol"] == MAESTRO) & usuarios["activo"].astype(bool)).any():
+            with storage.transaction() as tx:
+                seguridad.asegurar_maestro(tx)
     except Exception as exc:  # nunca bloquear el arranque por esto
         mensaje_error_amable(exc, contexto="autorreparar_config")
 
@@ -248,7 +253,7 @@ def _render_app(storage, sesion: dict) -> None:
 
     with st.sidebar:
         encabezado_marca(contexto="sidebar")
-        etiqueta_rol = "Administrador" if rol == ADMIN else "Vendedor"
+        etiqueta_rol = nombre_rol(rol)
         st.markdown(
             f'<div class="ot-usuario-sidebar"><span class="ot-usuario-sidebar__nombre">{html.escape(str(sesion["nombre"]))}</span>'
             f'<span class="ot-usuario-sidebar__rol">{etiqueta_rol}</span></div>',

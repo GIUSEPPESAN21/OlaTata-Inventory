@@ -12,6 +12,11 @@ from __future__ import annotations
 
 ADMIN = "admin"
 VENDEDOR = "vendedor"
+# Maestro: el dueño del sistema (uno solo). Todo lo del administrador y del
+# vendedor, más editar usuarios (nombre, usuario, rol), editar los datos de
+# una venta y crear/eliminar datos de prueba. Ningún administrador puede
+# desactivarlo ni restablecer su clave.
+MAESTRO = "maestro"
 
 CAPABILITIES: dict[str, frozenset[str]] = {
     ADMIN: frozenset(
@@ -50,6 +55,9 @@ CAPABILITIES: dict[str, frozenset[str]] = {
 __all__ = [
     "ADMIN",
     "VENDEDOR",
+    "MAESTRO",
+    "ROLES_ADMINISTRATIVOS",
+    "nombre_rol",
     "CAPABILITIES",
     "PermisoDenegadoError",
     "tiene_capacidad",
@@ -76,3 +84,20 @@ def requerir(rol: str, capacidad: str) -> None:
     """
     if not tiene_capacidad(rol, capacidad):
         raise PermisoDenegadoError(rol, capacidad)
+
+
+# Maestro = TODO lo del administrador y del vendedor (calculado, así nunca
+# se queda atrás si se agrega una capacidad nueva) + sus exclusivas.
+CAPACIDADES_EXCLUSIVAS_MAESTRO = frozenset({"editar_usuarios", "editar_venta", "datos_prueba"})
+CAPABILITIES[MAESTRO] = CAPABILITIES[ADMIN] | CAPABILITIES[VENDEDOR] | CAPACIDADES_EXCLUSIVAS_MAESTRO
+
+# Roles que cuentan como "administrador" (p.ej. para no dejar el negocio sin
+# uno activo).
+ROLES_ADMINISTRATIVOS = frozenset({ADMIN, MAESTRO})
+
+_NOMBRES_ROL = {MAESTRO: "Maestro", ADMIN: "Administrador", VENDEDOR: "Vendedor"}
+
+
+def nombre_rol(rol: str) -> str:
+    """Nombre del rol para mostrar en pantalla."""
+    return _NOMBRES_ROL.get(rol, str(rol).capitalize())

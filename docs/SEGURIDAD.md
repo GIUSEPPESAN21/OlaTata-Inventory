@@ -11,6 +11,7 @@ Qué protege la app, cómo, y qué le toca hacer al dueño. Revisión del
 | Claves débiles | Mínimo **10** caracteres, letras y números, no comunes, sin el usuario ni el nombre. Claves temporales aleatorias (`secrets`) que siempre cumplen | `core/seguridad.py` |
 | Sesión robada u olvidada abierta | Expira por inactividad (configurable) y a las **12 h** aunque haya actividad; se revoca al cambiar o restablecer la clave y al desactivar la cuenta | `app.py`, `core/auth.py` |
 | Clave olvidada / empleado que se va | **Restablecer clave** (admin): temporal nueva, cambio obligatorio, cierra todas sus sesiones. Desactivar cuenta: efecto inmediato | Ajustes → Usuarios |
+| Abuso de un administrador sobre el dueño | Rol **maestro** único: ningún admin puede desactivarlo, restablecer su clave ni editarlo; solo el maestro edita usuarios y ventas | `core/permissions.py`, `core/seguridad.py` |
 | Quedarse fuera del sistema | No se puede desactivar la propia cuenta ni al último administrador activo | `core/seguridad.py` |
 | Acciones sin permiso | Permisos revalidados en `core/` en cada acción (ocultar un botón no basta) | `core/permissions.py` |
 | No saber quién hizo qué | **Registro de seguridad**: ingresos, cambios/restablecimientos de clave, usuarios creados/activados/desactivados, cierres de mes (nunca guarda contraseñas) | Ajustes → Usuarios |
