@@ -32,6 +32,12 @@ jobs:
       - name: Instalar dependencias (requirements-dev.txt)
         run: pip install -r requirements-dev.txt
 
+      # `pip install playwright` instala solo la librería, NO el navegador:
+      # sin este paso, las 3 pruebas visuales de tests/test_visual_playwright.py
+      # fallaban con "Executable doesn't exist ... playwright install".
+      - name: Descargar Chromium para las pruebas visuales (Playwright)
+        run: python -m playwright install --with-deps chromium
+
       - name: Lint (ruff)
         run: ruff check .
 
