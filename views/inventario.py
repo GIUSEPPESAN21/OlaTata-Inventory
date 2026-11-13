@@ -87,7 +87,7 @@ def _tab_productos(ctx: ViewContext, rol: str) -> None:
         st.error(_mensaje_amigable(exc, "listar productos"))
         return
 
-    with card(acento="superior"):
+    with card(acento="superior", key="ot-card-superior-inv-filtros"):
         col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
         with col1:
             busqueda = st.text_input("Buscar por nombre o código de barras", key="inv_busqueda", icon=":material/search:")

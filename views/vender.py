@@ -239,7 +239,9 @@ def _panel_busqueda(productos_activos, stock: dict, sin_stock_permitido: bool) -
         for _, fila in resultados.iterrows():
             pid = str(fila["id"])
             disponible = int(stock.get(pid, 0))
-            c1, c2, c3 = st.columns([5, 3, 2], vertical_alignment="center")
+            # Contenedor con clave solo para el diseño de celular (sin estilo en computador).
+            fila_contenedor = st.container(key=f"ot-movil-resultado-{pid}")
+            c1, c2, c3 = fila_contenedor.columns([5, 3, 2], vertical_alignment="center")
             c1.markdown(
                 f"**{md_seguro(fila['nombre'])}**  \n"
                 f"<span class='ot-resultado__codigo'>{md_seguro(codigo_para_producto(pid, fila.get('codigo_barras')))}"
@@ -276,7 +278,9 @@ def _panel_carrito(ctx: ViewContext) -> None:
         if ultimo:
             st.markdown(chip_estado(f"Agregado: {md_seguro(ultimo)}", "exito"), unsafe_allow_html=True)
         for idx, linea in enumerate(carrito):
-            col1, col2, col3, col4 = st.columns([4.2, 2.2, 2.4, 1], vertical_alignment="center")
+            # Contenedor con clave solo para el diseño de celular (sin estilo en computador).
+            linea_contenedor = st.container(key=f"ot-movil-linea-{idx}")
+            col1, col2, col3, col4 = linea_contenedor.columns([4.2, 2.2, 2.4, 1], vertical_alignment="center")
             col1.markdown(
                 f"**{md_seguro(linea['nombre_snapshot'])}**  \n"
                 f"<span class='ot-resultado__codigo'>{md_seguro(format_cop(linea['precio_unitario']))} c/u</span>",

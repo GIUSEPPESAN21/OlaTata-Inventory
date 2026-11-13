@@ -121,6 +121,17 @@ de la fecha.
   consolidados en `core/ui.py`, Material Symbols autoalojado). Estado
   actual de `main` en el momento de escribir esta documentación.
 
+## Celular con escala de app (2026-11-13)
+
+- Bloque de estilos solo para pantallas ≤ 640 px (el computador queda
+  idéntico, verificado píxel a píxel). Título de pantalla 35→25 px,
+  secciones 28→19 px, cifras 47→26 px, total 42→31 px, letra base 15 px.
+- Campos de texto a 16 px: el iPhone ya no amplía la página al tocar un
+  campo (era la sensación de "zoom").
+- Filas de Ventas/Productos/Usuarios y resultados de Vender en una sola
+  línea con su botón; carrito en dos renglones; fechas lado a lado;
+  menos espacio vacío arriba; logo e ingreso más compactos.
+
 ## Tablas rediseñadas: solo lo esencial, en el estilo de la marca (2026-11-13)
 
 - Se retiró la cuadrícula tipo hoja de cálculo (`st.dataframe`, dibujada

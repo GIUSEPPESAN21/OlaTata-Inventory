@@ -1112,3 +1112,123 @@ button:focus-visible {
   .ot-mini-kpis .ot-mini-kpi__valor { font-size: 1rem; white-space: nowrap; }
   .ot-mini-kpis .ot-mini-kpi__etiqueta { font-size: 0.62rem; letter-spacing: 0.04em; }
 }
+
+/* ======================================================================
+   CELULAR (≤ 640 px): escala de app móvil. Solo aplica en pantallas
+   angostas; el computador queda EXACTAMENTE igual.
+   Medido antes (iPhone 13): título 35px, sección 28px, cifras 47px,
+   total 42px, campos 14,9px (iOS amplía la página al tocar un campo con
+   letra < 16px: esa era la sensación de "zoom").
+   ====================================================================== */
+@media (max-width: 640px) {
+  /* Base: la mayoría de tamaños de Streamlit dependen de esta raíz */
+  html, body, [data-testid="stAppViewContainer"] { font-size: 15.5px !important; }
+  [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] li { font-size: 15px; line-height: 1.5; }
+  [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { font-size: 13px !important; }
+
+  /* Campos: 16px exactos para que el iPhone NO amplíe la página al escribir */
+  input, textarea, select,
+  [data-baseweb="input"] input, [data-baseweb="textarea"] textarea, [data-baseweb="select"] * {
+    font-size: 16px !important;
+  }
+  [data-testid="stWidgetLabel"] p { font-size: 13.5px !important; }
+
+  /* Botones: letra de app y área táctil cómoda (≥ 44px) */
+  [data-testid="stMain"] button p, [data-testid="stSidebar"] button p { font-size: 15px !important; }
+  [data-testid="stMain"] button { min-height: 44px; }
+
+  /* Encabezado de cada pantalla, más compacto */
+  .ot-encabezado-pagina { padding-bottom: 0.25rem; margin-bottom: 0.75rem; }
+  .ot-encabezado-pagina__icono { width: 40px; height: 40px; margin-bottom: 0.25rem; }
+  .ot-encabezado-pagina__icono .material-symbols-outlined { font-size: 22px !important; }
+  .ot-encabezado-pagina__titulo { font-size: 1.6rem !important; }
+  .ot-encabezado-pagina__subtitulo { font-size: 14px !important; margin-top: 0.2rem !important; }
+  .ot-encabezado-pagina__filete { width: 64px; margin-top: 0.5rem; }
+  .ot-titulo-seccion { font-size: 1.25rem !important; margin: 0.4rem 0 0.6rem 0; }
+
+  /* Tarjetas con menos relleno */
+  [class*="st-key-ot-card-"] { padding: 0.95rem 0.85rem !important; }
+
+  /* Pestañas y guías */
+  [data-testid="stTabs"] [role="tab"] p { font-size: 14.5px !important; }
+  [data-testid="stTabs"] [role="tablist"] { gap: 0.1rem 0.9rem; }
+  [class*="st-key-ot-guia-"] summary p { font-size: 14px !important; }
+  .ot-guia li { font-size: 14px; }
+
+  /* Cifras grandes (Análisis, total de la venta, métricas) */
+  .ot-kpi__icono { width: 38px; height: 38px; }
+  .ot-kpi__icono .material-symbols-outlined { font-size: 20px !important; }
+  .ot-kpi__valor { font-size: clamp(1.05rem, 15cqi, 1.7rem) !important; }
+  .ot-kpi__etiqueta { font-size: 11.5px; min-height: 2.4em; }
+  .ot-total-carrito { padding: 0.6rem 0.6rem; margin: 0.5rem 0; }
+  .ot-total-carrito .ot-total-carrito__valor { font-size: clamp(1.5rem, 12cqi, 2rem) !important; }
+  [data-testid="stMetricValue"] { font-size: 1.5rem !important; }
+  [data-testid="stMetricValue"] div { font-size: 1.5rem !important; }
+  .ot-precio-producto { font-size: 1.05rem !important; }
+
+  /* Filas, tablas, barras y chips */
+  .ot-fila__titulo { font-size: 15px; }
+  .ot-fila__sub { font-size: 13px; }
+  .ot-fila__meta { font-size: 12px; }
+  .ot-fila__valor { font-size: 15.5px; }
+  .ot-chip { font-size: 12.5px; padding: 0.12rem 0.5rem; }
+  .ot-tabla { font-size: 14px; }
+  .ot-tabla td::before { font-size: 11px; }
+  .ot-barra__etiqueta, .ot-barra__valor { font-size: 14px; }
+  .ot-barra__detalle { font-size: 12px; }
+
+  /* Filas de lista (Ventas, Productos, Usuarios): botón a la derecha en la
+     MISMA fila, como en una app (antes el botón bajaba a otro renglón). */
+  [class*="st-key-ot-fila-"] { padding: 0.5rem 0.65rem; }
+  [class*="st-key-ot-fila-"] [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 0.5rem !important; }
+  [class*="st-key-ot-fila-"] [data-testid="stColumn"] { min-width: 0 !important; }
+  [class*="st-key-ot-fila-"] [data-testid="stColumn"]:last-child { flex: 0 0 auto !important; width: auto !important; }
+  [class*="st-key-ot-fila-"] [data-testid="stColumn"]:last-child button { padding: 0.3rem 0.7rem; min-height: 40px; }
+  .ot-fila { gap: 0.5rem; }
+
+  /* Vender: cada resultado de búsqueda en una sola fila (nombre | precio | Agregar) */
+  [class*="st-key-ot-movil-resultado-"] [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 0.5rem !important; }
+  [class*="st-key-ot-movil-resultado-"] [data-testid="stColumn"] { min-width: 0 !important; }
+  [class*="st-key-ot-movil-resultado-"] [data-testid="stColumn"]:not(:first-child) { flex: 0 0 auto !important; width: auto !important; }
+  [class*="st-key-ot-movil-resultado-"] button { padding: 0.3rem 0.7rem; min-height: 40px; }
+  /* Vender: línea del carrito en dos renglones (nombre / cantidad · total · quitar) */
+  [class*="st-key-ot-movil-linea-"] [data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; gap: 0.35rem 0.5rem !important; }
+  [class*="st-key-ot-movil-linea-"] [data-testid="stColumn"] { min-width: 0 !important; }
+  [class*="st-key-ot-movil-linea-"] [data-testid="stColumn"]:first-child { flex: 1 1 100% !important; width: 100% !important; }
+  [class*="st-key-ot-movil-linea-"] [data-testid="stColumn"]:not(:first-child) { flex: 1 1 0 !important; width: auto !important; }
+  [class*="st-key-ot-movil-linea-"] [data-testid="stColumn"]:last-child { flex: 0 0 auto !important; }
+
+  /* Barra lateral */
+  .ot-avatar-sidebar img { width: 84px !important; height: 84px !important; }
+  .ot-aros-wrap--sidebar { top: calc(42px - 46px) !important; }
+  .ot-aros-wrap--sidebar svg { width: 92px; height: 92px; }
+  .ot-marca-script--sidebar { font-size: 1.7rem !important; }
+  .ot-usuario-sidebar__nombre { font-size: 14px; }
+  [class*="st-key-ot-sidebar-nav-"] [data-testid="stBaseButton-primary"],
+  [class*="st-key-ot-sidebar-nav-"] [data-testid="stBaseButton-tertiary"] { min-height: 42px; }
+
+  /* Ingreso (login / primer arranque) */
+  .ot-hero-marca__logo { width: 150px !important; height: 150px !important; }
+  .ot-hero-marca__aros svg { width: 150px !important; height: 150px !important; }
+  .ot-hero-marca__logo img { width: 118px !important; height: 118px !important; }
+  .ot-marca-script--hero { font-size: 2.2rem !important; }
+  .ot-hero-logo__subtitulo { font-size: 14.5px; margin-bottom: 0.5rem; }
+
+  /* Franja de cifras de Ventas */
+  .ot-mini-kpis .ot-mini-kpi__valor { font-size: 15px; }
+}
+
+/* CELULAR (≤ 640 px) — distribución */
+@media (max-width: 640px) {
+  /* Menos espacio vacío arriba (queda el justo para el botón del menú) */
+  [data-testid="stAppViewContainer"] [data-testid="stMainBlockContainer"] { padding-top: 3.25rem !important; }
+  /* Ventas: "Desde" y "Hasta" lado a lado; "Buscar" debajo a lo ancho */
+  [class*="st-key-ot-card-ventas-filtros"] [data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; gap: 0.5rem !important; }
+  [class*="st-key-ot-card-ventas-filtros"] [data-testid="stColumn"] { min-width: 0 !important; flex: 1 1 calc(50% - 0.5rem) !important; }
+  [class*="st-key-ot-card-ventas-filtros"] [data-testid="stColumn"]:last-child { flex: 1 1 100% !important; }
+  /* Inventario: búsqueda y categoría a lo ancho; las dos casillas lado a lado */
+  [class*="st-key-ot-card-superior-inv-filtros"] [data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; gap: 0.25rem 0.5rem !important; }
+  [class*="st-key-ot-card-superior-inv-filtros"] [data-testid="stColumn"] { min-width: 0 !important; flex: 1 1 100% !important; }
+  [class*="st-key-ot-card-superior-inv-filtros"] [data-testid="stColumn"]:nth-child(3),
+  [class*="st-key-ot-card-superior-inv-filtros"] [data-testid="stColumn"]:nth-child(4) { flex: 1 1 calc(50% - 0.5rem) !important; }
+}
