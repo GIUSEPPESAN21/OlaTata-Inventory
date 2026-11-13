@@ -28,6 +28,8 @@ from core.ui import (
     encabezado_pagina,
     enfocar_campo,
     estado_vacio,
+    guia,
+    md_seguro,
     mensaje_error_amable,
     render_logo,
     titulo_seccion,
@@ -198,6 +200,7 @@ def render(ctx: ViewContext) -> None:
         return
 
     encabezado_pagina("Vender", "Busca o escanea un producto para empezar", icono="shopping_bag")
+    guia("vender")
 
     productos_df = storage.read_sheet(schema.PRODUCTOS)
     if productos_df.empty:
@@ -232,10 +235,10 @@ def render(ctx: ViewContext) -> None:
         return
 
     with card(acento="izquierdo"):
-        titulo_seccion("Carrito", centrado=False)
+        titulo_seccion("Carrito")
         for idx, linea in enumerate(st.session_state.vender_carrito):
             col1, col2, col3, col4 = st.columns([3.2, 1.6, 1.6, 1.6])
-            col1.write(linea["nombre_snapshot"])
+            col1.markdown(md_seguro(linea["nombre_snapshot"]))
             clave_cant = f"vender_cant_{idx}"
             # `value=` solo si el widget aún no tiene estado: si se fijó
             # desde un callback, pasarlo también genera un aviso de Streamlit.
@@ -301,7 +304,7 @@ def render(ctx: ViewContext) -> None:
     )
 
     with card(acento="izquierdo"):
-        titulo_seccion("Pago", centrado=False)
+        titulo_seccion("Pago")
         st.caption("Puedes dividir el pago en dos o más métodos.")
         for idx, pago in enumerate(st.session_state.vender_pagos):
             colm, colv, colx = st.columns([2, 2, 1])

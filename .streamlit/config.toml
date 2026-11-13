@@ -75,3 +75,13 @@ maxUploadSize = 20
 
 [browser]
 gatherUsageStats = false
+
+[client]
+# Seguridad: nunca mostrar trazas ni tipos de excepción en el navegador
+# (filtran rutas y detalles internos). El detalle va solo al log del
+# servidor; la app ya muestra mensajes amables con código de incidente.
+showErrorDetails = "none"
+# Sin opciones de desarrollador (rerun, limpiar caché, deploy) en la barra
+# superior; el resto de iconos se ocultan además desde assets/theme.css.
+toolbarMode = "minimal"
+showSidebarNavigation = false

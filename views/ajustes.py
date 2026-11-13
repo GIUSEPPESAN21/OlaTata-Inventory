@@ -11,9 +11,10 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
-from core import auth, schema
+from core import auth, schema, seguridad
 from core.excel_safe import TextoInvalidoError, excel_safe
 from core.permissions import PermisoDenegadoError, requerir
 from core.sincronizacion import (
@@ -23,7 +24,7 @@ from core.sincronizacion import (
     resolver_conflicto,
     sincronizar_ahora,
 )
-from core.timeutil import now_utc, parse_iso_utc, to_iso_utc
+from core.timeutil import parse_iso_utc
 from core.ui import (
     card,
     chip_estado,
@@ -32,8 +33,11 @@ from core.ui import (
     estado_vacio,
     formatear_fecha_hora_local,
     generar_password_temporal,
+    guia,
+    md_seguro,
     mensaje_error_amable,
     resumen_estado_sync,
+    tabla_amigable,
     titulo_seccion,
     validar_password,
 )
@@ -63,6 +67,7 @@ def render(ctx: ViewContext) -> None:
         return
 
     encabezado_pagina("Ajustes", "Negocio, usuarios, sincronización y respaldo.", icono="settings")
+    guia("ajustes")
     tabs = st.tabs(
         ["Negocio", "Usuarios", "Sincronización", "Respaldo", "Integridad", "Cierre de mes"]
     )
@@ -82,6 +87,7 @@ def render(ctx: ViewContext) -> None:
 
 # ------------------------------------------------------------- negocio
 def _tab_negocio(ctx: ViewContext) -> None:
+    guia("ajustes_negocio")
     storage = ctx.storage
     nombre_actual = storage.get_config(CLAVE_NEGOCIO_NOMBRE, "Ola Tata") or "Ola Tata"
     # Si `negocio_whatsapp` todavía no se ha guardado nunca desde este
@@ -168,6 +174,7 @@ def _tab_negocio(ctx: ViewContext) -> None:
 
 # ------------------------------------------------------------- usuarios
 def _tab_usuarios(ctx: ViewContext) -> None:
+    guia("ajustes_usuarios")
     storage = ctx.storage
     if "ajustes_clave_sugerida" not in st.session_state:
         st.session_state["ajustes_clave_sugerida"] = generar_password_temporal()
@@ -194,13 +201,14 @@ def _tab_usuarios(ctx: ViewContext) -> None:
         _crear_usuario(ctx, nombre, usuario_nuevo, rol, clave)
 
     with card(acento="izquierdo"):
-        titulo_seccion("Usuarios existentes", centrado=False)
+        titulo_seccion("Usuarios existentes")
         df = storage.read_sheet(schema.USUARIOS)
         if df.empty:
             estado_vacio("Todavía no hay usuarios creados.", icono="group")
         else:
             for _, fila in df.iterrows():
                 _fila_usuario(ctx, fila)
+    _registro_seguridad(ctx)
 
 
 def _crear_usuario(ctx: ViewContext, nombre: str, usuario_nuevo: str, rol: str, clave: str) -> None:
@@ -213,9 +221,10 @@ def _crear_usuario(ctx: ViewContext, nombre: str, usuario_nuevo: str, rol: str, 
     errores = []
     if not nombre.strip():
         errores.append("Escribe el nombre.")
-    if not usuario_nuevo.strip():
-        errores.append("Escribe el usuario.")
-    error_password = validar_password(clave or "")
+    error_usuario = seguridad.validar_nombre_usuario(usuario_nuevo)
+    if error_usuario:
+        errores.append(error_usuario)
+    error_password = validar_password(clave or "", usuario=usuario_nuevo.strip(), nombre=nombre.strip())
     if error_password:
         errores.append(error_password)
     if errores:
@@ -225,7 +234,7 @@ def _crear_usuario(ctx: ViewContext, nombre: str, usuario_nuevo: str, rol: str, 
 
     try:
         with ctx.storage.transaction() as tx:
-            auth.crear_usuario(
+            nuevo_id = auth.crear_usuario(
                 tx,
                 nombre=excel_safe(nombre.strip(), field_name="nombre"),
                 usuario=usuario_nuevo.strip(),
@@ -233,6 +242,9 @@ def _crear_usuario(ctx: ViewContext, nombre: str, usuario_nuevo: str, rol: str, 
                 rol=rol,
                 must_change_password=True,
                 rol_llamador=ctx.usuario.rol,
+            )
+            seguridad.registrar_evento(
+                tx, ctx.usuario.id, "crear_usuario", f"usuario={usuario_nuevo.strip()} rol={rol} id={nuevo_id}"
             )
     except ValueError as exc:
         st.error(str(exc))
@@ -251,7 +263,7 @@ def _fila_usuario(ctx: ViewContext, fila) -> None:
     col1, col2, col3 = st.columns([3, 2, 3])
     with col1:
         etiqueta_rol = "Administrador" if fila["rol"] == "admin" else "Vendedor"
-        st.write(f"**{fila['nombre']}** ({fila['usuario']}) — {etiqueta_rol}")
+        st.markdown(f"**{md_seguro(fila['nombre'])}** ({md_seguro(fila['usuario'])}) — {etiqueta_rol}")
     with col2:
         if activo:
             st.markdown(chip_estado("Activo", "exito"), unsafe_allow_html=True)
@@ -274,20 +286,34 @@ def _fila_usuario(ctx: ViewContext, fila) -> None:
                 else:
                     _alternar_activo(ctx, storage, fila, activo)
 
+        if activo and fila["id"] != ctx.usuario.id:
+            with st.popover("Restablecer clave", icon=":material/lock_reset:", use_container_width=True):
+                st.caption(
+                    "Genera una clave temporal nueva, cierra todas sus sesiones abiertas y le pedirá "
+                    "cambiarla al ingresar. Entrégala en persona."
+                )
+                if st.button("Generar clave temporal", key=f"ajustes_reset_{fila['id']}", type="primary"):
+                    try:
+                        with storage.transaction() as tx:
+                            clave = seguridad.restablecer_password(tx, ctx.usuario.rol, ctx.usuario.id, fila["id"])
+                    except (PermisoDenegadoError, ValueError) as exc:
+                        st.error(str(exc))
+                    except Exception as exc:  # nunca una traza visible
+                        mensaje, _codigo = mensaje_error_amable(exc, contexto="restablecer_clave")
+                        st.error(mensaje)
+                    else:
+                        st.success("Clave restablecida. Cópiala ahora: no se volverá a mostrar.")
+                        st.code(clave, language=None)
+
 
 def _alternar_activo(ctx: ViewContext, storage, fila, activo_actual: bool) -> None:
     try:
-        requerir(ctx.usuario.rol, "gestionar_usuarios")
-    except PermisoDenegadoError as exc:
-        st.error(f"No tienes permiso para esto: {exc}")
-        return
-    try:
         with storage.transaction() as tx:
-            df = tx.read_sheet(schema.USUARIOS)
-            coincide = df["id"] == fila["id"]
-            df.loc[coincide, "activo"] = not activo_actual
-            df.loc[coincide, "updated_at"] = to_iso_utc(now_utc())
-            tx.write_sheet(schema.USUARIOS, df)
+            seguridad.cambiar_estado_usuario(
+                tx, ctx.usuario.rol, ctx.usuario.id, fila["id"], activo=not activo_actual
+            )
+    except (PermisoDenegadoError, ValueError) as exc:
+        st.error(str(exc))
     except Exception as exc:  # nunca una traza de Python visible (§6)
         mensaje, _codigo = mensaje_error_amable(exc, contexto="alternar_activo_usuario")
         st.error(mensaje)
@@ -296,8 +322,45 @@ def _alternar_activo(ctx: ViewContext, storage, fila, activo_actual: bool) -> No
         ctx.rerun()
 
 
+def _registro_seguridad(ctx: ViewContext) -> None:
+    """Últimos eventos de `auditoria`: quién ingresó, cambió claves o
+    gestionó usuarios, y cuándo (hora de Bogotá)."""
+    try:
+        eventos = seguridad.eventos_recientes(ctx.storage, ctx.usuario.rol, limite=50)
+    except PermisoDenegadoError:
+        return
+    with card(acento="izquierdo"):
+        titulo_seccion("Registro de seguridad")
+        st.caption("Últimos 50 eventos: ingresos, cambios de clave y cambios en usuarios.")
+        if eventos.empty:
+            estado_vacio("Todavía no hay eventos registrados.", icono="shield")
+            return
+        usuarios = ctx.storage.read_sheet(schema.USUARIOS)
+        nombres = dict(zip(usuarios["id"].astype(str), usuarios["usuario"].astype(str)))
+        acciones = {
+            "ingreso": "Ingreso",
+            "cambiar_clave": "Cambio de clave",
+            "restablecer_clave": "Clave restablecida",
+            "crear_usuario": "Usuario creado",
+            "crear_admin": "Administrador creado",
+            "activar_usuario": "Usuario activado",
+            "desactivar_usuario": "Usuario desactivado",
+            "cerrar_mes": "Cierre de mes",
+        }
+        tabla = pd.DataFrame(
+            {
+                "fecha_hora_utc": eventos["ts"],
+                "usuario": eventos["usuario"].astype(str).map(lambda u: nombres.get(u, u)),
+                "accion": eventos["accion"].astype(str).map(lambda a: acciones.get(a, a)),
+                "detalle": eventos["detalle"].fillna(""),
+            }
+        )
+        st.dataframe(tabla_amigable(tabla), use_container_width=True, hide_index=True)
+
+
 # -------------------------------------------------------- sincronización
 def _tab_sincronizacion(ctx: ViewContext) -> None:
+    guia("ajustes_sincronizacion")
     try:
         requerir(ctx.usuario.rol, "resolver_conflicto_sync")
     except PermisoDenegadoError as exc:
@@ -383,6 +446,7 @@ def _tab_sincronizacion(ctx: ViewContext) -> None:
 
 # -------------------------------------------------------------- respaldo
 def _tab_respaldo(ctx: ViewContext) -> None:
+    guia("ajustes_respaldo")
     try:
         requerir(ctx.usuario.rol, "descargar_respaldo")
     except PermisoDenegadoError as exc:
@@ -419,6 +483,7 @@ def _tab_respaldo(ctx: ViewContext) -> None:
 
 # ------------------------------------------------------------ integridad
 def _tab_integridad(ctx: ViewContext) -> None:
+    guia("ajustes_integridad")
     try:
         requerir(ctx.usuario.rol, "verificar_integridad")
     except PermisoDenegadoError as exc:
@@ -444,6 +509,7 @@ def _tab_integridad(ctx: ViewContext) -> None:
 
 # ----------------------------------------------------------- cierre mes
 def _tab_cierre_mes(ctx: ViewContext) -> None:
+    guia("ajustes_cierre")
     try:
         requerir(ctx.usuario.rol, "cerrar_mes")
     except PermisoDenegadoError as exc:

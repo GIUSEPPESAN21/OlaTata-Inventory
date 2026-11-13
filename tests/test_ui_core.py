@@ -9,16 +9,15 @@ from core import ui
 
 
 def test_validar_password_rechaza_corta():
-    assert ui.validar_password("1234567") is not None  # 7 caracteres
+    assert ui.validar_password("Abc12345") is not None  # 8 < 10 caracteres
 
 
-def test_validar_password_acepta_minimo():
-    assert ui.validar_password("12345678") is None  # exactamente 8
+def test_validar_password_acepta_clave_robusta():
+    assert ui.validar_password("Cartera7Rosa") is None
 
 
-def test_validar_password_respeta_minimo_personalizado():
-    assert ui.validar_password("abcde", minimo=5) is None
-    assert ui.validar_password("abcd", minimo=5) is not None
+def test_validar_password_aplica_politica_de_usuario_y_nombre():
+    assert ui.validar_password("mariaperez2026", usuario="mariap", nombre="María Perez") is not None
 
 
 def test_generar_password_temporal_largo_y_alfabeto():

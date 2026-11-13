@@ -24,6 +24,7 @@ from core.ui import (
     chip_estado,
     encabezado_pagina,
     estado_vacio,
+    guia,
     tabla_amigable,
     titulo_seccion,
 )
@@ -53,6 +54,7 @@ def render(ctx: ViewContext) -> None:
         return
 
     encabezado_pagina("Inventario", "Productos, mercancía y existencias", icono="inventory_2")
+    guia("inventario")
 
     tabs = st.tabs(
         ["Productos", "Entrada de mercancía", "Conteo físico", "Importar inventario", "Etiquetas", "Integridad"]
@@ -73,6 +75,7 @@ def render(ctx: ViewContext) -> None:
 
 # --------------------------------------------------------------- Productos
 def _tab_productos(ctx: ViewContext, rol: str) -> None:
+    guia("inventario_productos")
     try:
         productos = inventory.listar_productos(ctx.storage, rol)
     except Exception as exc:  # pragma: no cover - defensivo
@@ -141,7 +144,7 @@ def _tab_productos(ctx: ViewContext, rol: str) -> None:
 
     if not productos.empty:
         with card(acento="izquierdo"):
-            titulo_seccion("Editar / activar / desactivar", centrado=False)
+            titulo_seccion("Editar / activar / desactivar")
             opciones = {f"{fila['id']} · {fila['nombre']}": fila["id"] for _, fila in productos.iterrows()}
             seleccion = st.selectbox("Producto", options=list(opciones.keys()), key="inv_editar_select")
             if seleccion:
@@ -291,6 +294,7 @@ def _cambiar_estado(ctx: ViewContext, rol: str, producto_id: str, *, activo: boo
 
 # ----------------------------------------------------------- Entrada
 def _tab_entrada(ctx: ViewContext, rol: str) -> None:
+    guia("inventario_entrada")
     titulo_seccion("Entrada de mercancía")
     st.caption("Registra mercancía que llega al inventario. El costo promedio se recalcula automáticamente.")
 
@@ -352,6 +356,7 @@ def _tab_entrada(ctx: ViewContext, rol: str) -> None:
 
 # ------------------------------------------------------------ Conteo físico
 def _tab_conteo(ctx: ViewContext, rol: str) -> None:
+    guia("inventario_conteo")
     titulo_seccion("Conteo físico")
     st.caption("Ingresa lo que contaste; si hay diferencia con el sistema, pide un motivo y ajusta el stock.")
 
@@ -418,6 +423,7 @@ def _plantilla_csv_bytes() -> bytes:
 
 
 def _tab_importar(ctx: ViewContext, rol: str) -> None:
+    guia("inventario_importar")
     titulo_seccion("Importar inventario inicial")
     st.caption("Sube un Excel o CSV. Primero verás una vista previa fila por fila; nada se guarda hasta que confirmes.")
 
@@ -471,7 +477,7 @@ def _tab_importar(ctx: ViewContext, rol: str) -> None:
         )
 
     if resultado.filas_validas:
-        st.markdown("**Vista previa de lo que se va a importar:**")
+        titulo_seccion("Vista previa de lo que se va a importar")
         st.dataframe(tabla_amigable(pd.DataFrame(resultado.filas_validas)), use_container_width=True, hide_index=True)
 
     if resultado.ok and resultado.filas_validas:
@@ -511,6 +517,7 @@ def _tab_etiquetas(ctx: ViewContext, rol: str) -> None:
     perfil (medidas, etiquetas por fila) se guarda en CONFIG para que el
     día de la instalación se ajuste sin tocar código."""
     titulo_seccion("Etiquetas de precio")
+    guia("inventario_etiquetas")
 
     try:
         requerir(rol, "etiquetas")
@@ -532,7 +539,7 @@ def _tab_etiquetas(ctx: ViewContext, rol: str) -> None:
         return
 
     with card(acento="superior"):
-        titulo_seccion("¿Qué etiquetas imprimir?", centrado=False)
+        titulo_seccion("¿Qué etiquetas imprimir?")
         busqueda = st.text_input("Filtrar productos", key="etq_filtro", icon=":material/search:")
         tabla = productos.copy()
         if busqueda.strip():
@@ -607,7 +614,7 @@ def _tab_etiquetas(ctx: ViewContext, rol: str) -> None:
         return
 
     with card(acento="izquierdo"):
-        titulo_seccion("Vista previa (primera fila)", centrado=False)
+        titulo_seccion("Vista previa (primera fila)")
         st.image(vista.convert("L"), use_container_width=True)
         st.caption(
             f"En el diálogo de impresión: impresora de **etiquetas**, papel **{perfil.descripcion_papel}**, "
@@ -637,7 +644,7 @@ def _seccion_perfil_etiquetas(ctx: ViewContext, rol: str):
     """Elige/ajusta el rollo. Devuelve el `PerfilEtiqueta` en uso."""
     guardado = etiquetas.cargar_perfil(ctx.storage)
     with card(acento="superior"):
-        titulo_seccion("Impresora y rollo de etiquetas", centrado=False)
+        titulo_seccion("Impresora y rollo de etiquetas")
         nombres = list(etiquetas.PERFILES_PREDEFINIDOS) + [_PERSONALIZADO]
         indice = nombres.index(guardado.nombre) if guardado.nombre in nombres else len(nombres) - 1
         eleccion = st.selectbox("Tamaño del rollo", nombres, index=indice, key="etq_perfil_sel")
@@ -700,6 +707,7 @@ def _seccion_perfil_etiquetas(ctx: ViewContext, rol: str):
 
 # ----------------------------------------------------------- Integridad
 def _tab_integridad(ctx: ViewContext, rol: str) -> None:
+    guia("inventario_integridad")
     titulo_seccion("Verificar integridad del inventario")
     st.caption("Recalcula el stock de cada producto desde el kardex de movimientos y lo compara con el sistema.")
 

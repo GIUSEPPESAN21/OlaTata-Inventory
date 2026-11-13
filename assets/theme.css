@@ -84,7 +84,7 @@ body, [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"]
   line-height: 1.55;
 }
 [data-testid="stWidgetLabel"] p {
-  font-size: 0.92rem;
+  font-size: 0.97rem;
   font-weight: 600;
   color: var(--ot-tinta);
 }
@@ -423,7 +423,7 @@ button:focus-visible {
 .ot-encabezado-pagina__titulo {
   font-family: "Playfair Display", Georgia, serif;
   font-weight: 600;
-  font-size: clamp(2.1rem, 4.5vw, 2.85rem);
+  font-size: clamp(2.3rem, 5vw, 3.15rem);
   color: var(--ot-tinta);
   line-height: 1.2;
   letter-spacing: 0.01em;
@@ -431,10 +431,12 @@ button:focus-visible {
 }
 .ot-encabezado-pagina__subtitulo {
   color: var(--ot-texto-secundario);
-  font-size: 1.05rem;
+  font-size: 1.15rem;
   line-height: 1.5;
   max-width: 40rem;
-  margin: 0.45rem auto 0 auto;
+  /* !important: el `p` de st.markdown trae su propio margen y anulaba el
+     auto, dejando el subtítulo corrido a la izquierda del título. */
+  margin: 0.45rem auto 0 auto !important;
   text-align: center;
 }
 .ot-encabezado-pagina__filete {
@@ -449,13 +451,16 @@ button:focus-visible {
 .ot-titulo-seccion {
   font-family: "Playfair Display", Georgia, serif;
   font-weight: 600;
-  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-size: clamp(1.65rem, 3.2vw, 2.2rem);
+  line-height: 1.25;
   color: var(--ot-tinta);
   text-align: center;
-  margin: 1.25rem 0 0.75rem 0;
+  margin: 1rem 0 1rem 0;
 }
+/* Todos los títulos van centrados (uniformidad geométrica); la variante
+   "izquierda" se conserva solo por compatibilidad y también centra. */
 .ot-titulo-seccion--izquierda {
-  text-align: left;
+  text-align: center;
 }
 
 /* Marca en script: nombre del negocio, saludos (C2 — uso restringido) */
@@ -584,7 +589,9 @@ button:focus-visible {
 }
 .ot-estado-vacio__motivo {
   position: absolute;
-  top: 50%;
+  /* centrado sobre el ICONO (padding superior 1.5rem + medio icono 28px),
+     no sobre todo el bloque: antes los aros quedaban corridos hacia abajo */
+  top: calc(1.5rem + 28px);
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 0;
@@ -655,7 +662,7 @@ button:focus-visible {
 }
 
 /* --------------------------------------------------------------- pestañas */
-[data-testid="stTabs"] [data-baseweb="tab-list"] {
+[data-testid="stTabs"] [role="tablist"] {
   gap: 0.25rem;
 }
 [data-testid="stTabs"] [data-baseweb="tab-highlight"] {
@@ -715,7 +722,7 @@ button:focus-visible {
 }
 @media (max-width: 480px) {
   .ot-marca-script--hero { font-size: 2.5rem; }
-  .ot-encabezado-pagina__titulo { font-size: 1.9rem; }
+  .ot-encabezado-pagina__titulo { font-size: 2.05rem; }
   .ot-total-carrito__valor { font-size: 2.25rem; }
   /* NOTA: no se fuerza min-width/display en [data-testid="stSidebar"]
      aquí -- Streamlit ya la convierte en un cajón (drawer) superpuesto
@@ -727,3 +734,70 @@ button:focus-visible {
 
 /* Avatar circular de usuario en la barra lateral (72px heredado, D2) */
 .ot-avatar-sidebar img { max-width: 100%; }
+
+
+/* ------------------------------------------------- pestañas centradas */
+/* `role="tablist"`/`role="tab"` son atributos ARIA estables del componente de
+   pestañas (no una clase autogenerada .st-emotion-cache-*). */
+[data-testid="stTabs"] [role="tablist"] {
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+}
+[data-testid="stTabs"] [role="tab"] p {
+  font-size: 1.02rem;
+  font-weight: 500;
+}
+
+/* -------------------------------------- barra superior de Streamlit oculta */
+/* Quita Share, estrella, lápiz, GitHub y el menú ⋮ (y "Deploy" en local).
+   OJO: en Streamlit 1.66 el botón para volver a abrir la barra lateral
+   (`stExpandSidebarButton`) vive DENTRO de `stToolbar`; ocultar toda la
+   barra lo dejaba sin forma de volver al menú (hallazgo de la prueba en
+   navegador). Por eso se oculta todo lo de la barra EXCEPTO ese botón,
+   sus contenedores y su contenido. */
+[data-testid="stToolbar"] *:not(:has([data-testid="stExpandSidebarButton"])):not([data-testid="stExpandSidebarButton"]):not([data-testid="stExpandSidebarButton"] *),
+[data-testid="stToolbarActions"],
+[data-testid="stToolbarActionButton"],
+[data-testid="stMainMenu"],
+[data-testid="stAppDeployButton"],
+[data-testid="stDecoration"],
+#MainMenu {
+  display: none !important;
+}
+[data-testid="stHeader"] {
+  background: transparent !important;
+}
+
+/* ------------------------------------------------------- guía de uso */
+[class*="st-key-ot-guia-"] [data-testid="stExpander"] details {
+  border: 1px dashed var(--ot-dorado-brillo) !important;
+  border-radius: 14px !important;
+  background: rgba(255, 255, 255, 0.65);
+}
+[class*="st-key-ot-guia-"] [data-testid="stExpander"] summary p {
+  font-weight: 600;
+  color: var(--ot-dorado-texto);
+}
+.ot-guia ol {
+  margin: 0.25rem 0 0.5rem 1.25rem;
+  padding: 0;
+}
+.ot-guia li {
+  margin: 0.3rem 0;
+  line-height: 1.5;
+}
+.ot-guia__nota {
+  margin-top: 0.6rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 10px;
+  background: var(--ot-alerta-fondo);
+  color: var(--ot-alerta-texto);
+  font-size: 0.92rem;
+}
+
+/* La descripción corta que va JUSTO debajo de un título de sección se
+   centra con él (uniformidad geométrica). */
+[data-testid="stElementContainer"]:has(.ot-titulo-seccion) + [data-testid="stElementContainer"] [data-testid="stCaptionContainer"] {
+  text-align: center;
+}

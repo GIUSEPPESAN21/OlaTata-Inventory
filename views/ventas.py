@@ -14,7 +14,14 @@ from core.money import format_cop
 from core.permissions import PermisoDenegadoError, tiene_capacidad
 from core.returns import DevolucionInvalidaError, VentaNoEncontradaError, anular_venta, registrar_devolucion_cambio
 from core.timeutil import local_date, now_utc
-from core.ui import card, chip_estado, encabezado_pagina, estado_vacio
+from core.ui import (
+    card,
+    chip_estado,
+    encabezado_pagina,
+    estado_vacio,
+    guia,
+    md_seguro,
+)
 from views import ViewContext
 
 _METODOS_LABEL = {
@@ -31,6 +38,7 @@ def render(ctx: ViewContext) -> None:
     usuario = ctx.usuario
 
     encabezado_pagina("Ventas", "Historial, devoluciones y anulaciones", icono="receipt_long")
+    guia("ventas")
 
     with card(acento="superior"):
         col1, col2 = st.columns(2)
@@ -71,18 +79,20 @@ def _fila_venta(ctx: ViewContext, venta) -> None:
             chip_estado("Anulada", "error") if anulada else chip_estado("Confirmada", "exito"),
             unsafe_allow_html=True,
         )
-        st.write(f"Vendedor: {venta['vendedor_nombre']}")
-        st.write(f"Canal: {venta['canal']}")
+        st.markdown(f"Vendedor: {md_seguro(venta['vendedor_nombre'])}")
+        st.markdown(f"Canal: {md_seguro(venta['canal'])}")
         if venta["cliente_nombre"]:
-            st.write(f"Cliente: {venta['cliente_nombre']}")
+            st.markdown(f"Cliente: {md_seguro(venta['cliente_nombre'])}")
 
         items_df = storage.read_sheet(schema.VENTA_ITEMS)
         items_venta = items_df[items_df["venta_id"] == venta["id"]]
         for _, item in items_venta.iterrows():
-            st.write(f"{int(item['cantidad'])} x {item['nombre_snapshot']} — {format_cop(int(item['total_linea']))}")
+            st.markdown(
+                f"{int(item['cantidad'])} x {md_seguro(item['nombre_snapshot'])} — {md_seguro(format_cop(int(item['total_linea'])))}"
+            )
 
         if venta["estado"] == "anulada":
-            st.error(f"Anulada. Motivo: {venta['anulada_motivo']}")
+            st.error(f"Anulada. Motivo: {md_seguro(venta['anulada_motivo'])}")
             return
 
         col1, col2 = st.columns(2)

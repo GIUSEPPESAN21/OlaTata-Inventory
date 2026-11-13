@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from core import auth
+from core import auth, seguridad
 from core.ui import (
     card,
     encabezado_marca,
@@ -58,7 +58,7 @@ def render(ctx: ViewContext) -> None:
             errores.append("Escribe tu nombre.")
         if not usuario.strip():
             errores.append("Escribe un usuario.")
-        error_password = validar_password(clave_elegida or "")
+        error_password = validar_password(clave_elegida or "", usuario=usuario.strip(), nombre=nombre.strip())
         if error_password:
             errores.append(error_password)
 
@@ -69,7 +69,7 @@ def render(ctx: ViewContext) -> None:
 
         try:
             with ctx.storage.transaction() as tx:
-                auth.crear_usuario(
+                nuevo_id = auth.crear_usuario(
                     tx,
                     nombre=nombre.strip(),
                     usuario=usuario.strip(),
@@ -78,6 +78,7 @@ def render(ctx: ViewContext) -> None:
                     must_change_password=True,
                     permitir_sin_sesion=True,
                 )
+                seguridad.registrar_evento(tx, nuevo_id, "crear_admin", f"usuario={usuario.strip()} (primer arranque)")
         except ValueError as exc:
             st.error(str(exc))
         except Exception as exc:  # nunca una traza de Python visible (§6)

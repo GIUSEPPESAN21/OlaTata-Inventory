@@ -121,6 +121,25 @@ de la fecha.
   consolidados en `core/ui.py`, Material Symbols autoalojado). Estado
   actual de `main` en el momento de escribir esta documentación.
 
+## Títulos uniformes, guías de uso y seguridad reforzada (2026-11-13)
+
+- **Diseño**: todos los títulos centrados (página, subtítulo, secciones,
+  pestañas y su descripción), un poco más grandes; aros del estado vacío
+  alineados con su icono. Verificado midiendo en el navegador: 0 px de
+  desvío en las 16 pantallas/pestañas.
+- **Barra superior de Streamlit oculta** (Share, estrella, lápiz, GitHub,
+  ⋮), conservando el botón para reabrir la barra lateral, que en 1.66 vive
+  dentro de esa barra.
+- **Guías "¿Cómo se usa?"** en cada pantalla y pestaña (`core/guias.py`).
+- **Seguridad** (`core/seguridad.py`, `docs/SEGURIDAD.md`): Pillow 13.0
+  (76 vulnerabilidades corregidas) y `pip-audit` en CI; política de claves
+  de 10+ caracteres; pausa creciente ante logins fallidos; sesión máxima de
+  12 h; "Restablecer clave" para el admin; no se puede desactivar la propia
+  cuenta ni al último admin; registro de seguridad (auditoría); nombres de
+  usuario restringidos; escape de Markdown en textos libres; navegador sin
+  trazas de error (`showErrorDetails = "none"`).
+- CI: descarga Chromium para las pruebas visuales (antes fallaban siempre).
+
 ## Impresión de etiquetas, recibos y lector de códigos (2026-11-13)
 
 - **Etiquetas físicas** (`core/etiquetas.py`): PDF al tamaño real del rollo

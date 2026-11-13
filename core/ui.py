@@ -22,8 +22,6 @@ from __future__ import annotations
 
 import itertools
 import logging
-import secrets
-import string
 import uuid
 from contextlib import contextmanager
 from datetime import datetime
@@ -73,6 +71,8 @@ __all__ = [
     "tabla_amigable",
     "boton_imprimir_pdf",
     "enfocar_campo",
+    "guia",
+    "md_seguro",
 ]
 
 # Iconos Material Symbols (§9: sin emojis en la UI) para cada vista del
@@ -89,8 +89,7 @@ ICONOS_VISTA = {
     "ajustes": "settings",
 }
 
-PASSWORD_MIN_LENGTH = 8
-_ALFABETO_PASSWORD_TEMPORAL = string.ascii_letters + string.digits
+PASSWORD_MIN_LENGTH = 10  # ver core.seguridad.PASSWORD_MIN
 
 # --------------------------------------------------------------------
 # TOKENS: única fuente de verdad de la paleta/tipografía/escala (C1-C3).
@@ -138,20 +137,21 @@ _SECUENCIA_COLOR_PLOTLY = [
 _ASSETS_DIR = None  # se resuelve perezosamente en logo_path()
 
 
-def validar_password(password: str, minimo: int = PASSWORD_MIN_LENGTH) -> str | None:
-    """Valida una contraseña nueva en el FORMULARIO (§10: bcrypt no impone
-    largo mínimo, así que la UI debe hacerlo). Devuelve `None` si es
-    válida, o un mensaje de error en español listo para mostrar."""
-    if password is None or len(password) < minimo:
-        return f"La contraseña debe tener al menos {minimo} caracteres."
-    return None
+def validar_password(password: str, *, usuario: str | None = None, nombre: str | None = None) -> str | None:
+    """Valida una contraseña nueva en el FORMULARIO con la política de
+    `core.seguridad.evaluar_password` (mínimo 10, letras y números, no
+    común, sin el usuario/nombre). `None` si es válida; si no, el motivo."""
+    from core.seguridad import evaluar_password
+
+    return evaluar_password(password, usuario=usuario, nombre=nombre)
 
 
-def generar_password_temporal(longitud: int = 10) -> str:
-    """Genera una clave temporal aleatoria (letras+dígitos) para el
-    primer arranque o para restablecer la clave de un usuario."""
-    longitud = max(longitud, PASSWORD_MIN_LENGTH)
-    return "".join(secrets.choice(_ALFABETO_PASSWORD_TEMPORAL) for _ in range(longitud))
+def generar_password_temporal(longitud: int = 12) -> str:
+    """Clave temporal aleatoria que siempre cumple la política (primer
+    arranque, crear usuario, restablecer clave)."""
+    from core.seguridad import generar_password_temporal as _generar
+
+    return _generar(longitud)
 
 
 def generar_codigo_incidente() -> str:
@@ -736,6 +736,8 @@ ETIQUETAS_COLUMNAS: dict[str, str] = {
     "columna": "Columna",
     "error": "Error",
     "advertencia": "Advertencia",
+    "accion": "Acción",
+    "usuario": "Usuario",
     "estado": "Estado",
     "motivo": "Motivo",
     "referencia": "Referencia",
@@ -903,3 +905,33 @@ def enfocar_campo(etiqueta_aria: str) -> None:
 </script><!-- {uuid.uuid4().hex} -->""",
         height=0,
     )
+
+
+# ---------------------------------------------------------------- guías
+def guia(clave: str) -> None:
+    """Desplegable "¿Cómo se usa?" con la guía de `core.guias` (pasos
+    numerados + nota). Cerrado por defecto para no estorbar al que ya sabe."""
+    import html
+
+    import streamlit as st
+
+    from core.guias import obtener_guia
+
+    inyectar_identidad_visual()
+    g = obtener_guia(clave)
+    pasos = "".join(f"<li>{html.escape(p)}</li>" for p in g.pasos)
+    nota = f'<div class="ot-guia__nota">{html.escape(g.nota)}</div>' if g.nota else ""
+    with st.container(key=f"ot-guia-{clave}"):
+        with st.expander(f"¿Cómo se usa? · {g.titulo}", icon=":material/help:"):
+            st.markdown(f'<div class="ot-guia"><ol>{pasos}</ol>{nota}</div>', unsafe_allow_html=True)
+
+
+_MD_ESPECIALES = "\\`*_{}[]()<>#+-.!|$~"
+
+
+def md_seguro(texto: object) -> str:
+    """Escapa texto libre (nombres de clientes, productos, motivos) antes
+    de pasarlo a `st.write`/`st.markdown`: así un nombre como
+    `[Paga aquí](http://…)` o `**$ 1.000**` se ve literal y no se convierte
+    en un enlace, formato o fórmula LaTeX."""
+    return "".join("\\" + c if c in _MD_ESPECIALES else c for c in str(texto))

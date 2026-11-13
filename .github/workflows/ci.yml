@@ -38,6 +38,11 @@ jobs:
       - name: Descargar Chromium para las pruebas visuales (Playwright)
         run: python -m playwright install --with-deps chromium
 
+      - name: Auditoría de dependencias (vulnerabilidades conocidas)
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt
+
       - name: Lint (ruff)
         run: ruff check .
 

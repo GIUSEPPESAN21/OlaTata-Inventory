@@ -24,7 +24,7 @@ import importlib
 
 import streamlit as st
 
-from core import auth, schema
+from core import auth, schema, seguridad
 from core.config import DEFAULT_DB_PATH, safe_secret
 from core.config_inicial import claves_faltantes, completar_config_faltante
 from core.demo_mode import demo_activo, render_aviso_datos_prueba
@@ -115,6 +115,8 @@ def sesion_es_valida(storage, sesion: dict) -> bool:
         minutos_inactividad = int(minutos_config) if minutos_config else None
     except Exception:
         minutos_inactividad = None
+    if seguridad.sesion_excede_maximo(sesion.get("inicio_utc")):
+        return False  # duración máxima absoluta, aunque haya actividad
     try:
         return auth.validar_sesion(
             storage,
@@ -202,15 +204,19 @@ def _indicador_conexion(storage) -> None:
 
 # --------------------------------------------------------------- vistas
 def _vista_cambiar_password(storage, sesion: dict) -> None:
-    encabezado_marca()
-    st.subheader("Cambia tu contraseña")
-    st.write("Por seguridad debes elegir una contraseña nueva antes de continuar.")
-    with st.form("formulario_cambiar_password"):
-        nueva = st.text_input("Contraseña nueva", type="password")
-        repetir = st.text_input("Repite la contraseña nueva", type="password")
-        enviar = st.form_submit_button("Guardar", use_container_width=True)
+    encabezado_marca(subtitulo="Inventario y ventas")
+    with card(acento="superior", key="ot-card-login-cambio"):
+        titulo_seccion("Cambia tu contraseña")
+        st.caption(
+            "Por seguridad debes elegir una contraseña nueva antes de continuar: al menos "
+            f"{seguridad.PASSWORD_MIN} caracteres, con letras y números, y que no incluya tu nombre ni tu usuario."
+        )
+        with st.form("formulario_cambiar_password"):
+            nueva = st.text_input("Contraseña nueva", type="password", icon=":material/lock:")
+            repetir = st.text_input("Repite la contraseña nueva", type="password", icon=":material/lock:")
+            enviar = st.form_submit_button("Guardar", use_container_width=True, type="primary")
     if enviar:
-        error = validar_password(nueva)
+        error = validar_password(nueva, usuario=sesion.get("usuario"), nombre=sesion.get("nombre"))
         if error:
             st.error(error)
         elif nueva != repetir:
@@ -225,6 +231,7 @@ def _vista_cambiar_password(storage, sesion: dict) -> None:
                         rol_llamador=sesion["rol"],
                         llamador_id=sesion["usuario_id"],
                     )
+                    seguridad.registrar_evento(tx, sesion["usuario_id"], "cambiar_clave", "cambio propio")
             except Exception as exc:  # nunca una traza de Python visible (§6)
                 mensaje, _codigo = mensaje_error_amable(exc, contexto="cambiar_password")
                 st.error(mensaje)

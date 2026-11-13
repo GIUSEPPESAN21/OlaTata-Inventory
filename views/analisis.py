@@ -20,7 +20,15 @@ from core.excel_report import exportar_periodo_excel
 from core.money import format_cop
 from core.permissions import PermisoDenegadoError, tiene_capacidad
 from core.timeutil import now_utc, local_date
-from core.ui import card, encabezado_pagina, estado_vacio, kpi_card, tabla_amigable, titulo_seccion
+from core.ui import (
+    card,
+    encabezado_pagina,
+    estado_vacio,
+    guia,
+    kpi_card,
+    tabla_amigable,
+    titulo_seccion,
+)
 from views import ViewContext
 
 _COLOR_PRIMARIO = PALETA_MARCA[0]
@@ -38,7 +46,8 @@ def render(ctx: ViewContext) -> None:
     hoy_local = local_date(now_utc())
     usuario_id = None if tiene_completo else usuario.id
 
-    encabezado_pagina("Análisis", icono="bar_chart")
+    encabezado_pagina("Análisis", "Ventas, ganancias e inventario en cifras", icono="bar_chart")
+    guia("analisis")
     if not tiene_completo:
         st.caption("Vista de vendedor: ventas, unidades y tickets de tu turno. Sin costos ni ganancia.")
 
@@ -171,7 +180,7 @@ def _render_hoy(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
         )
 
     with card(acento="superior"):
-        titulo_seccion("Ventas por hora", centrado=False)
+        titulo_seccion("Ventas por hora")
         ventas_por_hora = kpis["ventas_por_hora"]
         if not _hay_movimiento(ventas_por_hora, campo="total"):
             estado_vacio("Todavía no hay ventas hoy.", "Las ventas que registres van a aparecer aquí, hora por hora.", icono="bar_chart")
@@ -182,41 +191,41 @@ def _render_hoy(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
             st.plotly_chart(fig, use_container_width=True, key="hoy_ventas_por_hora")
 
     with card(acento="superior"):
-        titulo_seccion("Por método de pago", centrado=False)
+        titulo_seccion("Por método de pago")
         _dataframe_o_vacio(kpis["por_metodo_pago"], "hoy_por_metodo_pago", "Todavía no hay pagos registrados hoy.")
         st.metric("Flujo de caja (sin 'Cambio')", format_cop(kpis["flujo_caja"]))
 
     colc, cold = st.columns(2)
     with colc:
         with card(acento="superior"):
-            titulo_seccion("Por canal", centrado=False)
+            titulo_seccion("Por canal")
             _dataframe_o_vacio(kpis["por_canal"], "hoy_por_canal", "Todavía no hay ventas por canal hoy.")
     with cold:
         with card(acento="superior"):
-            titulo_seccion("Por categoría", centrado=False)
+            titulo_seccion("Por categoría")
             _dataframe_o_vacio(kpis["por_categoria"], "hoy_por_categoria", "Todavía no hay ventas por categoría hoy.")
 
     with card(acento="superior"):
-        titulo_seccion("Top 10 por unidades", centrado=False)
+        titulo_seccion("Top 10 por unidades")
         _grafica_top_o_vacio(
             kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades",
             "hoy_top_unidades", "Todavía no hay productos vendidos hoy.",
         )
     if tiene_completo and kpis.get("por_ganancia"):
         with card(acento="superior"):
-            titulo_seccion("Top 10 por ganancia", centrado=False)
+            titulo_seccion("Top 10 por ganancia")
             _grafica_top_o_vacio(
                 kpis["por_ganancia"], "ganancia", "dinero", "Top 10 por ganancia",
                 "hoy_top_ganancia", "Todavía no hay ganancia registrada hoy.",
             )
 
     with card(acento="superior"):
-        titulo_seccion("Ventas del día", centrado=False)
+        titulo_seccion("Ventas del día")
         _dataframe_o_vacio(kpis["ventas_del_dia"], "hoy_ventas_del_dia", "Todavía no se ha registrado ninguna venta hoy.")
 
     if tiene_capacidad(rol, "cuadre_caja"):
         with card(acento="izquierdo"):
-            titulo_seccion("Cuadre de caja", centrado=False)
+            titulo_seccion("Cuadre de caja")
             with st.form("form_cuadre_caja"):
                 base_inicial = st.number_input("Base inicial", min_value=0, step=1000, value=0)
                 efectivo_contado = st.number_input("Efectivo contado", min_value=0, step=1000, value=0)
@@ -253,7 +262,7 @@ def _render_semana(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str 
     _kpi_row(kpis, tiene_completo)
 
     with card(acento="superior"):
-        titulo_seccion("Ventas netas por día (lunes → hoy)", centrado=False)
+        titulo_seccion("Ventas netas por día (lunes → hoy)")
         _grafica_barras_o_vacio(
             kpis["barras_por_dia"], "Ventas netas por día (lunes → hoy)",
             "semana_barras_por_dia", "Todavía no hay ventas esta semana.",
@@ -265,7 +274,7 @@ def _render_semana(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str 
     )
 
     with card(acento="superior"):
-        titulo_seccion("Top productos de la semana", centrado=False)
+        titulo_seccion("Top productos de la semana")
         _grafica_top_o_vacio(
             kpis["por_unidades"], "cantidad", "unidades", "Top por unidades",
             "semana_top_unidades", "Todavía no hay productos vendidos esta semana.",
@@ -279,7 +288,7 @@ def _render_mes(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
     _kpi_row(kpis, tiene_completo)
 
     with card(acento="superior"):
-        titulo_seccion("Ventas netas por día (día 1 → hoy)", centrado=False)
+        titulo_seccion("Ventas netas por día (día 1 → hoy)")
         _grafica_barras_o_vacio(
             kpis["barras_por_dia"], "Ventas netas por día (día 1 → hoy)",
             "mes_barras_por_dia", "Todavía no hay ventas este mes.",
@@ -288,22 +297,22 @@ def _render_mes(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
     colc, cold = st.columns(2)
     with colc:
         with card(acento="superior"):
-            titulo_seccion("Por categoría", centrado=False)
+            titulo_seccion("Por categoría")
             _dataframe_o_vacio(kpis["por_categoria"], "mes_por_categoria", "Todavía no hay ventas por categoría este mes.")
     with cold:
         with card(acento="superior"):
-            titulo_seccion("Por canal", centrado=False)
+            titulo_seccion("Por canal")
             _dataframe_o_vacio(kpis["por_canal"], "mes_por_canal", "Todavía no hay ventas por canal este mes.")
 
     with card(acento="superior"):
-        titulo_seccion("Top 10 por unidades", centrado=False)
+        titulo_seccion("Top 10 por unidades")
         _grafica_top_o_vacio(
             kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades",
             "mes_top_unidades", "Todavía no hay productos vendidos este mes.",
         )
     if tiene_completo and kpis.get("por_ganancia"):
         with card(acento="superior"):
-            titulo_seccion("Top 10 por ganancia", centrado=False)
+            titulo_seccion("Top 10 por ganancia")
             _grafica_top_o_vacio(
                 kpis["por_ganancia"], "ganancia", "dinero", "Top 10 por ganancia",
                 "mes_top_ganancia", "Todavía no hay ganancia registrada este mes.",
@@ -317,7 +326,7 @@ def _render_mes(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
 
     if tiene_completo:
         with card(acento="superior"):
-            titulo_seccion("Inventario", centrado=False)
+            titulo_seccion("Inventario")
             inv = kpis["valor_inventario"]
             colx, coly, colz, colw = st.columns(4)
             colx.metric("Valor al costo", format_cop(inv["al_costo"]))
@@ -327,7 +336,7 @@ def _render_mes(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
             colw.metric("Agotados", bajo["agotados"])
 
     with card(acento="superior"):
-        titulo_seccion("Stock sin ventas en 30 días", centrado=False)
+        titulo_seccion("Stock sin ventas en 30 días")
         _dataframe_o_vacio(
             kpis["stock_sin_ventas_30_dias"], "mes_stock_sin_ventas",
             "Todo el stock tuvo ventas en los últimos 30 días.",
@@ -366,7 +375,7 @@ def _render_meses_anteriores(ctx: ViewContext, hoy_local: date, rol: str) -> Non
     tiene_completo = tiene_capacidad(rol, "ver_analisis_completo")
     _kpi_row(kpis, tiene_completo)
     with card(acento="superior"):
-        titulo_seccion("Top 10 por unidades", centrado=False)
+        titulo_seccion("Top 10 por unidades")
         _grafica_top_o_vacio(
             kpis["por_unidades"], "cantidad", "unidades", "Top 10 por unidades",
             "anteriores_top_unidades", f"No hay productos vendidos archivados para {seleccion}.",
