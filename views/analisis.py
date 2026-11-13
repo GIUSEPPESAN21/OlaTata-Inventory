@@ -21,12 +21,13 @@ from core.money import format_cop
 from core.permissions import PermisoDenegadoError, tiene_capacidad
 from core.timeutil import now_utc, local_date
 from core.ui import (
+    barras_ranking,
     card,
     encabezado_pagina,
     estado_vacio,
     guia,
     kpi_card,
-    tabla_amigable,
+    tabla_html,
     titulo_seccion,
 )
 from views import ViewContext
@@ -132,11 +133,38 @@ def _grafica_top(registros: list[dict], campo_y: str, etiqueta: str, titulo: str
 # nuevo el día 1. Estos envoltorios reemplazan esos casos por
 # `core.ui.estado_vacio()`, sin tocar `core.analytics` (los datos siguen
 # siendo los mismos; solo cambia qué se pinta cuando están vacíos).
-def _dataframe_o_vacio(registros: list[dict], key: str, mensaje: str) -> None:
-    if not registros:
-        estado_vacio(mensaje, icono="bar_chart")
-        return
-    st.dataframe(tabla_amigable(pd.DataFrame(registros)), use_container_width=True, hide_index=True, key=key)
+_METODOS = {"efectivo": "Efectivo", "datafono": "Datáfono", "transferencia": "Transferencia",
+            "sistecredito": "Sistecrédito", "cambio": "Cambio (saldo a favor)"}
+_CANALES = {"tienda": "Tienda", "instagram": "Instagram", "whatsapp": "WhatsApp"}
+
+
+def _barras_metodo_pago(registros: list[dict], mensaje: str) -> None:
+    barras_ranking(
+        [(_METODOS.get(str(r["metodo"]), str(r["metodo"])), int(r["total"])) for r in registros],
+        detalle=[f"{int(r.get('nro_pagos', 0))} pago(s)" for r in registros],
+        vacio=mensaje,
+    )
+
+
+def _barras_campo(registros: list[dict], campo: str, mensaje: str, nombres: dict | None = None) -> None:
+    barras_ranking(
+        [((nombres or {}).get(str(r[campo]), str(r[campo]) or "Sin categoría"), int(r["ventas_netas"])) for r in registros],
+        vacio=mensaje,
+    )
+
+
+def _tabla_ventas_del_dia(registros: list[dict], tiene_completo: bool) -> None:
+    columnas = [
+        {"clave": "fecha_hora_utc", "titulo": "Hora", "tipo": "hora_utc"},
+        {"clave": "numero", "titulo": "Venta"},
+        {"clave": "cliente_nombre", "titulo": "Cliente"},
+        {"clave": "canal", "titulo": "Canal"},
+    ]
+    if tiene_completo:
+        columnas.append({"clave": "vendedor_nombre", "titulo": "Vendedor"})
+    columnas.append({"clave": "total", "titulo": "Total", "tipo": "dinero", "destacar": True})
+    filas = [dict(r, canal=_CANALES.get(str(r.get("canal")), r.get("canal"))) for r in reversed(registros)]
+    tabla_html(filas, columnas, vacio="Todavía no se ha registrado ninguna venta hoy.", icono_vacio="receipt_long")
 
 
 def _grafica_top_o_vacio(registros: list[dict], campo_y: str, etiqueta: str, titulo: str, key: str, mensaje: str) -> None:
@@ -163,6 +191,7 @@ def _boton_excel(ctx: ViewContext, tipo: str, fecha_local: date, rol: str, usuar
         st.download_button(
             "Descargar .xlsx",
             data=contenido,
+            on_click="ignore",
             file_name=f"olatata_analisis_{tipo}_{fecha_local.isoformat()}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"descargar_{tipo}",
@@ -199,18 +228,18 @@ def _render_hoy(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
 
     with card(acento="superior"):
         titulo_seccion("Por método de pago")
-        _dataframe_o_vacio(kpis["por_metodo_pago"], "hoy_por_metodo_pago", "Todavía no hay pagos registrados hoy.")
+        _barras_metodo_pago(kpis["por_metodo_pago"], "Todavía no hay pagos registrados hoy.")
         st.metric("Flujo de caja (sin 'Cambio')", format_cop(kpis["flujo_caja"]))
 
     colc, cold = st.columns(2)
     with colc:
         with card(acento="superior"):
             titulo_seccion("Por canal")
-            _dataframe_o_vacio(kpis["por_canal"], "hoy_por_canal", "Todavía no hay ventas por canal hoy.")
+            _barras_campo(kpis["por_canal"], "canal", "Todavía no hay ventas por canal hoy.", _CANALES)
     with cold:
         with card(acento="superior"):
             titulo_seccion("Por categoría")
-            _dataframe_o_vacio(kpis["por_categoria"], "hoy_por_categoria", "Todavía no hay ventas por categoría hoy.")
+            _barras_campo(kpis["por_categoria"], "categoria", "Todavía no hay ventas por categoría hoy.")
 
     with card(acento="superior"):
         titulo_seccion("Top 10 por unidades")
@@ -228,7 +257,7 @@ def _render_hoy(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
 
     with card(acento="superior"):
         titulo_seccion("Ventas del día")
-        _dataframe_o_vacio(kpis["ventas_del_dia"], "hoy_ventas_del_dia", "Todavía no se ha registrado ninguna venta hoy.")
+        _tabla_ventas_del_dia(kpis["ventas_del_dia"], tiene_completo)
 
     if tiene_capacidad(rol, "cuadre_caja"):
         with card(acento="izquierdo"):
@@ -305,11 +334,11 @@ def _render_mes(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
     with colc:
         with card(acento="superior"):
             titulo_seccion("Por categoría")
-            _dataframe_o_vacio(kpis["por_categoria"], "mes_por_categoria", "Todavía no hay ventas por categoría este mes.")
+            _barras_campo(kpis["por_categoria"], "categoria", "Todavía no hay ventas por categoría este mes.")
     with cold:
         with card(acento="superior"):
             titulo_seccion("Por canal")
-            _dataframe_o_vacio(kpis["por_canal"], "mes_por_canal", "Todavía no hay ventas por canal este mes.")
+            _barras_campo(kpis["por_canal"], "canal", "Todavía no hay ventas por canal este mes.", _CANALES)
 
     with card(acento="superior"):
         titulo_seccion("Top 10 por unidades")
@@ -344,9 +373,13 @@ def _render_mes(ctx: ViewContext, hoy_local: date, rol: str, usuario_id: str | N
 
     with card(acento="superior"):
         titulo_seccion("Stock sin ventas en 30 días")
-        _dataframe_o_vacio(
-            kpis["stock_sin_ventas_30_dias"], "mes_stock_sin_ventas",
-            "Todo el stock tuvo ventas en los últimos 30 días.",
+        st.caption("Productos con existencias que no se vendieron en el último mes: candidatos a promoción.")
+        tabla_html(
+            sorted(kpis["stock_sin_ventas_30_dias"], key=lambda r: -int(r["stock"])),
+            [{"clave": "nombre", "titulo": "Producto", "destacar": True},
+             {"clave": "stock", "titulo": "Unidades", "tipo": "numero"}],
+            vacio="Todo el stock tuvo ventas en los últimos 30 días.",
+            icono_vacio="verified",
         )
 
     _boton_excel(ctx, "mes", hoy_local, rol, usuario_id)

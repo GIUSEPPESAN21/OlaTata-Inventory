@@ -42,7 +42,7 @@ GUIAS: dict[str, Guia] = {
             "Elige las fechas con «Desde» y «Hasta» (por defecto, la última semana).",
             "Escribe en «Buscar» un número, cliente, teléfono, producto, código o vendedor: la tabla se filtra "
             "mientras escribes.",
-            "Toca una venta de la tabla: abajo aparece su detalle.",
+            "Pulsa «Ver» en una venta: su detalle se abre justo debajo («Cerrar» lo oculta).",
             "Desde el detalle: «Reimprimir recibo», «Devolución / cambio», «Anular venta» (administrador o maestro, "
             "con motivo) y «Editar datos» (solo maestro: cliente, teléfono, canal, envío o nota).",
         ),
@@ -68,7 +68,7 @@ GUIAS: dict[str, Guia] = {
             "Usa el buscador, la categoría o las casillas «Bajo mínimo» / «Sin stock» para filtrar la tabla.",
             "Para crear uno abre «Nuevo producto»: nombre, categoría, costo, precio, stock mínimo y stock inicial. "
             "El código de barras es opcional (si no tiene, la etiqueta usa uno interno).",
-            "Para corregir datos elige el producto en «Editar / activar / desactivar» y guarda los cambios.",
+            "Para corregir datos pulsa «Editar» en la fila del producto: el formulario se abre justo debajo.",
             "Desactiva los productos que ya no vendes en lugar de borrarlos: así se conserva su historial.",
         ),
     ),
@@ -106,7 +106,8 @@ GUIAS: dict[str, Guia] = {
             "Revisa que el tamaño del rollo coincida con el de la impresora (por defecto, 3 por fila de 32 × 25 mm). "
             "Si cambias medidas, oprime «Guardar como predeterminado».",
             "La primera vez imprime la «Hoja de prueba»: los recuadros deben caer dentro de las etiquetas.",
-            "Marca «Imprimir» en cada producto y ajusta la cantidad de etiquetas (por defecto, una por unidad en stock).",
+            "En «Productos» escribe el nombre o el código y elige los productos; ajusta la cantidad de etiquetas "
+            "de cada uno (por defecto, una por unidad en stock).",
             "Revisa la vista previa y oprime «Imprimir etiquetas». En el diálogo elige la impresora de etiquetas "
             "y escala 100 % (tamaño real).",
         ),
@@ -157,9 +158,8 @@ GUIAS: dict[str, Guia] = {
             "Crea una cuenta por persona; nunca compartan usuario.",
             "Al crearla, entrega la clave temporal en persona: el sistema le pedirá cambiarla al primer ingreso.",
             "Si alguien deja de trabajar en el negocio, desactiva su cuenta: sale de inmediato y conserva su historial.",
-            "«Restablecer clave» genera una nueva clave temporal y cierra todas sus sesiones abiertas.",
-            "«Editar» (solo maestro): cambia nombre, usuario o rol. Si cambia el usuario o el rol, "
-            "esa persona debe volver a ingresar.",
+            "Pulsa «Gestionar» en una persona: ahí están «Restablecer clave» (clave temporal nueva y cierre de "
+            "sus sesiones), activar/desactivar y, solo para el maestro, «Editar datos» (nombre, usuario, rol).",
         ),
         "Las claves deben tener al menos 10 caracteres, con letras y números.",
     ),

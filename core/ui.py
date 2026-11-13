@@ -72,6 +72,13 @@ __all__ = [
     "enfocar_campo",
     "guia",
     "md_seguro",
+    "tabla_html",
+    "barras_ranking",
+    "fila_html",
+    "chip_stock",
+    "limite_paginado",
+    "boton_ver_mas",
+    "cerrar_menu_en_movil",
 ]
 
 # Iconos Material Symbols (§9: sin emojis en la UI) para cada vista del
@@ -916,7 +923,8 @@ def boton_imprimir_pdf(pdf_bytes: bytes, texto: str, *, nombre_archivo: str, key
     components.html(_html_boton_imprimir(b64, texto, nonce), height=78)
     st.download_button(
         "Descargar PDF",
-        data=pdf_bytes,
+        data=lambda: pdf_bytes,  # diferido: sin archivo temporal en cada clic
+        on_click="ignore",
         file_name=nombre_archivo,
         mime="application/pdf",
         key=key,
@@ -985,3 +993,216 @@ def md_seguro(texto: object) -> str:
     `[Paga aquí](http://…)` o `**$ 1.000**` se ve literal y no se convierte
     en un enlace, formato o fórmula LaTeX."""
     return "".join("\\" + c if c in _MD_ESPECIALES else c for c in str(texto))
+
+
+# ------------------------------------------------- tablas y listas de marca
+# Reemplazan la cuadrícula tipo hoja de cálculo de `st.dataframe` (se pinta
+# en un canvas: no acepta el estilo de la marca, corta textos y muestra
+# columnas técnicas). Todo texto se escapa con `html.escape`; solo el tipo
+# "html" acepta marcado ya construido por la app (p.ej. un chip).
+def _celda(valor: Any, tipo: str) -> str:
+    import html
+
+    if tipo == "html":
+        return str(valor or "")
+    if valor is None or (not isinstance(valor, str) and _es_nulo(valor)):
+        return '<span class="ot-tabla__vacio">—</span>'
+    if tipo == "dinero":
+        try:
+            return html.escape(format_cop(int(valor)))
+        except (TypeError, ValueError):
+            return html.escape(str(valor))
+    if tipo == "fecha_utc":
+        from core.timeutil import parse_iso_utc
+
+        try:
+            return html.escape(formatear_fecha_hora_local(parse_iso_utc(str(valor))))
+        except Exception:
+            return html.escape(str(valor))
+    if tipo == "hora_utc":
+        from core.timeutil import parse_iso_utc
+
+        try:
+            texto = formatear_fecha_hora_local(parse_iso_utc(str(valor))).split(" ", 1)[1]
+            return html.escape(texto)
+        except Exception:
+            return html.escape(str(valor))
+    return html.escape(str(valor))
+
+
+def _es_nulo(valor: Any) -> bool:
+    try:
+        import pandas as pd
+
+        return bool(pd.isna(valor))
+    except (TypeError, ValueError):
+        return False
+
+
+def tabla_html(
+    filas: list[dict],
+    columnas: list[dict],
+    *,
+    vacio: str = "No hay datos para mostrar.",
+    icono_vacio: str = "inbox",
+) -> None:
+    """Tabla limpia de marca. `columnas`: lista de dicts con `clave`,
+    `titulo` y `tipo` opcional ("texto", "dinero", "numero", "fecha_utc",
+    "hora_utc", "html"); `destacar=True` pone la celda en negrita. Montos y
+    números van alineados a la derecha. En celular cada fila se vuelve una
+    tarjeta con la etiqueta de cada dato."""
+    import html
+
+    import streamlit as st
+
+    inyectar_identidad_visual()
+    if not filas:
+        estado_vacio(vacio, icono=icono_vacio)
+        return
+    cabecera = "".join(
+        f'<th class="ot-tabla__{c.get("tipo", "texto")}">{html.escape(c["titulo"])}</th>' for c in columnas
+    )
+    cuerpo = []
+    for fila in filas:
+        celdas = []
+        for c in columnas:
+            tipo = c.get("tipo", "texto")
+            clase = f"ot-tabla__{tipo}" + (" ot-tabla__destacar" if c.get("destacar") else "")
+            celdas.append(
+                f'<td class="{clase}" data-etiqueta="{html.escape(c["titulo"])}">{_celda(fila.get(c["clave"]), tipo)}</td>'
+            )
+        cuerpo.append("<tr>" + "".join(celdas) + "</tr>")
+    st.markdown(
+        '<div class="ot-tabla-wrap"><table class="ot-tabla"><thead><tr>'
+        + cabecera + "</tr></thead><tbody>" + "".join(cuerpo) + "</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def barras_ranking(
+    items: list[tuple[str, int]],
+    *,
+    formato: str = "dinero",
+    detalle: list[str] | None = None,
+    vacio: str = "Todavía no hay datos.",
+) -> None:
+    """Ranking visual: nombre, barra proporcional y valor (de mayor a
+    menor). Sirve para desgloses cortos (método de pago, canal,
+    categoría), mucho más fácil de leer de un vistazo que una tabla.
+    Los valores negativos (más devoluciones que ventas) se marcan en rojo."""
+    import html
+
+    import streamlit as st
+
+    inyectar_identidad_visual()
+    if not items:
+        estado_vacio(vacio, icono="bar_chart")
+        return
+    orden = sorted(range(len(items)), key=lambda i: items[i][1], reverse=True)
+    maximo = max((abs(int(v)) for _, v in items), default=0) or 1
+    filas = []
+    for i in orden:
+        etiqueta, valor = items[i]
+        valor = int(valor)
+        texto = format_cop(valor) if formato == "dinero" else f"{valor:,}".replace(",", ".")
+        ancho = max(2, round(abs(valor) / maximo * 100)) if valor else 0
+        extra = f'<span class="ot-barra__detalle">{html.escape(detalle[i])}</span>' if detalle else ""
+        negativa = " ot-barra--negativa" if valor < 0 else ""
+        filas.append(
+            f'<div class="ot-barra{negativa}">'
+            f'<div class="ot-barra__cabeza"><span class="ot-barra__etiqueta">{html.escape(str(etiqueta))}</span>'
+            f'<span class="ot-barra__valor">{html.escape(texto)}</span></div>'
+            f'<div class="ot-barra__pista"><div class="ot-barra__relleno" style="width:{ancho}%"></div></div>'
+            f"{extra}</div>"
+        )
+    st.markdown('<div class="ot-barras">' + "".join(filas) + "</div>", unsafe_allow_html=True)
+
+
+def fila_html(
+    titulo: str,
+    *,
+    sub: str | None = None,
+    meta: str | None = None,
+    valor: str | None = None,
+    chips_html: str = "",
+) -> str:
+    """HTML de una fila de lista (Ventas, Productos): título en negrita,
+    una línea secundaria, metadatos pequeños y el valor principal a la
+    derecha. Todo el texto se escapa; `chips_html` es marcado de la app."""
+    import html
+
+    partes = [f'<div class="ot-fila__titulo">{html.escape(titulo)}</div>']
+    if sub:
+        partes.append(f'<div class="ot-fila__sub">{html.escape(sub)}</div>')
+    if meta:
+        partes.append(f'<div class="ot-fila__meta">{html.escape(meta)}</div>')
+    derecha = ""
+    if valor or chips_html:
+        derecha = (
+            '<div class="ot-fila__derecha">'
+            + (f'<div class="ot-fila__valor">{html.escape(valor)}</div>' if valor else "")
+            + chips_html
+            + "</div>"
+        )
+    return f'<div class="ot-fila"><div class="ot-fila__principal">{"".join(partes)}</div>{derecha}</div>'
+
+
+def chip_stock(stock: int, minimo: int = 0, activo: bool = True) -> str:
+    """Chip de existencias con texto (nunca solo color)."""
+    if not activo:
+        return chip_estado("Inactivo", "info", icono="pause_circle")
+    if stock <= 0:
+        return chip_estado("Agotado", "error", icono="block")
+    if minimo and stock <= minimo:
+        return chip_estado(f"{stock} · stock bajo", "alerta", icono="warning")
+    return chip_estado(f"{stock} en stock", "exito", icono="inventory_2")
+
+
+def limite_paginado(clave: str, firma: str, paso: int = 15) -> int:
+    """Cuántas filas mostrar. Se reinicia a `paso` si cambian los filtros
+    (`firma`), para no mostrar cientos de filas de golpe."""
+    import streamlit as st
+
+    if st.session_state.get(f"{clave}__firma") != firma:
+        st.session_state[f"{clave}__firma"] = firma
+        st.session_state[f"{clave}__limite"] = paso
+    return int(st.session_state.get(f"{clave}__limite", paso))
+
+
+def boton_ver_mas(clave: str, total: int, mostrados: int, paso: int = 15) -> None:
+    """"Mostrar N más" al final de una lista larga (sin recargar arriba)."""
+    import streamlit as st
+
+    if total <= mostrados:
+        return
+
+    def _mas() -> None:
+        st.session_state[f"{clave}__limite"] = mostrados + paso
+
+    st.caption(f"Mostrando {mostrados} de {total}.")
+    st.button(
+        f"Mostrar {min(paso, total - mostrados)} más", key=f"{clave}__mas", on_click=_mas,
+        icon=":material/expand_more:", use_container_width=True,
+    )
+
+
+def cerrar_menu_en_movil() -> None:
+    """En celular la barra lateral tapa la pantalla: tras elegir una opción
+    del menú se cierra sola (en escritorio no hace nada). Usa el botón
+    estable `stSidebarCollapseButton` del propio Streamlit."""
+    import streamlit.components.v1 as components
+
+    components.html(
+        f"""<script>
+(function() {{
+  const w = window.parent;
+  if (w.innerWidth > 768) return;
+  setTimeout(function() {{
+    const boton = w.document.querySelector('[data-testid="stSidebarCollapseButton"] button');
+    const barra = w.document.querySelector('[data-testid="stSidebar"]');
+    if (boton && barra && barra.getAttribute('aria-expanded') !== 'false') boton.click();
+  }}, 60);
+}})();
+</script><!-- {uuid.uuid4().hex} -->""",
+        height=0,
+    )

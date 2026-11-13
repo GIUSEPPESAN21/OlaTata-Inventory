@@ -8,6 +8,7 @@ maestro, con motivo) y devolución/cambio -- §6.
 """
 from __future__ import annotations
 
+import html
 from datetime import timedelta
 
 import pandas as pd
@@ -25,6 +26,9 @@ from core.schema import CANALES_VENTA
 from core.timeutil import local_date, now_utc, parse_iso_utc
 from core.ui import (
     boton_imprimir_pdf,
+    boton_ver_mas,
+    fila_html,
+    limite_paginado,
     card,
     chip_estado,
     encabezado_pagina,
@@ -33,7 +37,6 @@ from core.ui import (
     guia,
     md_seguro,
     mensaje_error_amable,
-    titulo_seccion,
 )
 from views import ViewContext
 
@@ -80,16 +83,20 @@ def render(ctx: ViewContext) -> None:
     items_df = storage.read_sheet(schema.VENTA_ITEMS)
     pagos_df = storage.read_sheet(schema.PAGOS)
     productos_df = storage.read_sheet(schema.PRODUCTOS)
-    tabla, ventas_df = _tabla_ventas(ventas_df, items_df, pagos_df, productos_df, consulta)
+    resumenes = _resumir_ventas(ventas_df, items_df, pagos_df, productos_df, consulta)
 
-    confirmadas = ventas_df[ventas_df["estado"] != "anulada"]
-    total = int(pd.to_numeric(confirmadas["total"], errors="coerce").fillna(0).sum())
-    k1, k2, k3 = st.columns(3)
-    k1.markdown(_mini_kpi("Ventas", str(len(confirmadas)), "receipt_long"), unsafe_allow_html=True)
-    k2.markdown(_mini_kpi("Total vendido", format_cop(total), "payments"), unsafe_allow_html=True)
-    k3.markdown(_mini_kpi("Anuladas", str(len(ventas_df) - len(confirmadas)), "cancel"), unsafe_allow_html=True)
+    confirmadas = [r for r in resumenes if r["venta"]["estado"] != "anulada"]
+    total = sum(int(r["venta"]["total"]) for r in confirmadas)
+    st.markdown(
+        '<div class="ot-mini-kpis">'
+        + _mini_kpi("Ventas", str(len(confirmadas)), "receipt_long")
+        + _mini_kpi("Total vendido", format_cop(total), "payments")
+        + _mini_kpi("Anuladas", str(len(resumenes) - len(confirmadas)), "cancel")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
-    if tabla.empty:
+    if not resumenes:
         estado_vacio(
             "No hay ventas que coincidan." if consulta.strip() else "No hay ventas en ese rango de fechas.",
             "Prueba con otras fechas u otra búsqueda.",
@@ -97,39 +104,57 @@ def render(ctx: ViewContext) -> None:
         )
         return
 
-    # La clave incluye los filtros: si cambian, la fila elegida se limpia
-    # (así nunca queda seleccionada otra venta por error).
-    clave_tabla = f"ventas_tabla_{desde}_{hasta}_{normalizar(consulta)}"
-    evento = st.dataframe(
-        tabla,
-        key=clave_tabla,
-        on_select="rerun",
-        selection_mode="single-row",
-        hide_index=True,
-        use_container_width=True,
-        height=min(500, 46 + 39 * len(tabla)),
-        column_config={
-            "Número": st.column_config.TextColumn("Número", width=150),
-            "Fecha y hora": st.column_config.TextColumn("Fecha y hora", width=195),
-            "Cliente": st.column_config.TextColumn("Cliente", width=150),
-            "Productos": st.column_config.TextColumn("Productos", width="large"),
-            "Total": st.column_config.TextColumn("Total", width=110),
-            "Pago": st.column_config.TextColumn("Pago", width=120),
-            "Vendedor": st.column_config.TextColumn("Vendedor", width=140),
-            "Estado": st.column_config.TextColumn("Estado", width=105),
-        },
-    )
-    filas = list(getattr(getattr(evento, "selection", None), "rows", []) or [])
-    if not filas:
-        st.caption("Toca una venta de la tabla para ver el detalle, reimprimir el recibo, editarla, anularla o registrar una devolución.")
-        return
-    venta = ventas_df.iloc[filas[0]]
-    _detalle_venta(
-        ctx,
-        venta,
-        items_df[items_df["venta_id"] == venta["id"]],
-        pagos_df[pagos_df["venta_id"] == venta["id"]],
-    )
+    ver_vendedor = tiene_capacidad(usuario.rol, "ver_ventas_todas")
+    limite = limite_paginado("ventas_lista", f"{desde}|{hasta}|{normalizar(consulta)}")
+    seleccionada = st.session_state.get("ventas_sel")
+    for resumen in resumenes[:limite]:
+        _fila_venta(ctx, resumen, seleccionada, ver_vendedor, items_df, pagos_df)
+    boton_ver_mas("ventas_lista", len(resumenes), min(limite, len(resumenes)))
+
+
+def _seleccionar_venta(venta_id: str | None) -> None:
+    st.session_state["ventas_sel"] = venta_id
+
+
+def _fila_venta(ctx: ViewContext, resumen: dict, seleccionada, ver_vendedor: bool, items_df, pagos_df) -> None:
+    """Una fila por venta: QUÉ se vendió, a quién, cuándo y cuánto. El
+    detalle (con las acciones) se abre justo debajo al pulsar "Ver"."""
+    venta = resumen["venta"]
+    vid = str(venta["id"])
+    abierta = seleccionada == vid
+    cliente = _texto(venta["cliente_nombre"]).strip()
+    telefono = _texto(venta["cliente_telefono"]).strip()
+    meta = [f"N.º {_texto(venta['numero'])}", resumen["fecha"], resumen["metodos"]]
+    if ver_vendedor and _texto(venta["vendedor_nombre"]):
+        meta.append(_texto(venta["vendedor_nombre"]))
+    chips = chip_estado("Anulada", "error") if venta["estado"] == "anulada" else ""
+    with st.container(key=f"ot-fila-{'sel-' if abierta else ''}venta-{vid}"):
+        c1, c2 = st.columns([10, 2], vertical_alignment="center")
+        c1.markdown(
+            fila_html(
+                resumen["productos"],
+                sub=(f"{cliente} · {telefono}" if telefono else cliente) if cliente else None,
+                meta=" · ".join(m for m in meta if m),
+                valor=format_cop(int(venta["total"])),
+                chips_html=chips,
+            ),
+            unsafe_allow_html=True,
+        )
+        c2.button(
+            "Cerrar" if abierta else "Ver",
+            key=f"ventas_ver_{vid}",
+            icon=":material/expand_less:" if abierta else ":material/expand_more:",
+            on_click=_seleccionar_venta,
+            args=(None if abierta else vid,),
+            use_container_width=True,
+        )
+    if abierta:
+        _detalle_venta(
+            ctx,
+            venta,
+            items_df[items_df["venta_id"] == venta["id"]],
+            pagos_df[pagos_df["venta_id"] == venta["id"]],
+        )
 
 
 def _mini_kpi(etiqueta: str, valor: str, icono: str) -> str:
@@ -145,55 +170,47 @@ def _texto(valor) -> str:
     return "" if valor is None or (not isinstance(valor, str) and pd.isna(valor)) else str(valor)
 
 
-def _tabla_ventas(ventas_df, items_df, pagos_df, productos_df, consulta: str):
-    """Arma la tabla visible (una fila por venta) y filtra por la búsqueda.
-    Devuelve (tabla_para_mostrar, ventas_filtradas_en_el_mismo_orden)."""
+def _resumir_ventas(ventas_df, items_df, pagos_df, productos_df, consulta: str) -> list[dict]:
+    """Una entrada por venta (más reciente primero) con lo esencial ya
+    formateado, filtrada por la búsqueda en vivo."""
     ventas_df = ventas_df.sort_values("fecha_hora_utc", ascending=False).reset_index(drop=True)
     codigos = {
         str(f["id"]): codigo_para_producto(str(f["id"]), _texto(f.get("codigo_barras")))
         for _, f in productos_df.iterrows()
     }
-    filas, indices = [], []
+    palabras = normalizar(consulta).split()
+    resumenes = []
     for _, venta in ventas_df.iterrows():
         items = items_df[items_df["venta_id"] == venta["id"]]
         pagos = pagos_df[pagos_df["venta_id"] == venta["id"]]
         productos_txt = ", ".join(f"{int(i['cantidad'])}× {_texto(i['nombre_snapshot'])}" for _, i in items.iterrows())
         metodos = ", ".join(dict.fromkeys(_METODOS_LABEL.get(str(m), str(m)) for m in pagos["metodo"]))
+        if palabras:
+            indice = normalizar(" ".join([
+                _texto(venta["numero"]), _texto(venta["cliente_nombre"]), _texto(venta["cliente_telefono"]),
+                _texto(venta["vendedor_nombre"]), _texto(venta["canal"]), productos_txt,
+                " ".join(str(i) for i in items["producto_id"]),
+                " ".join(codigos.get(str(i), "") for i in items["producto_id"]),
+            ]))
+            if not all(p in indice for p in palabras):
+                continue
         try:
             fecha = formatear_fecha_hora_local(parse_iso_utc(str(venta["fecha_hora_utc"])))
         except Exception:
             fecha = _texto(venta["fecha_local"])
-        filas.append({
-            "Número": _texto(venta["numero"]),
-            "Fecha y hora": fecha,
-            "Cliente": _texto(venta["cliente_nombre"]) or "—",
-            "Productos": productos_txt or "—",
-            "Total": format_cop(int(venta["total"])),
-            "Pago": metodos or "—",
-            "Vendedor": _texto(venta["vendedor_nombre"]),
-            "Estado": "Anulada" if venta["estado"] == "anulada" else "Confirmada",
-        })
-        indices.append(normalizar(" ".join([
-            _texto(venta["numero"]), _texto(venta["cliente_nombre"]), _texto(venta["cliente_telefono"]),
-            _texto(venta["vendedor_nombre"]), _texto(venta["canal"]), productos_txt,
-            " ".join(str(i) for i in items["producto_id"]), " ".join(codigos.get(str(i), "") for i in items["producto_id"]),
-        ])))
-    tabla = pd.DataFrame(filas)
-    palabras = normalizar(consulta).split()
-    if palabras and not tabla.empty:
-        coincide = [all(p in idx for p in palabras) for idx in indices]
-        tabla = tabla[coincide].reset_index(drop=True)
-        ventas_df = ventas_df[coincide].reset_index(drop=True)
-    return tabla, ventas_df
+        resumenes.append({"venta": venta, "productos": productos_txt or "Venta sin productos",
+                          "metodos": metodos, "fecha": fecha})
+    return resumenes
 
 
 def _detalle_venta(ctx: ViewContext, venta, items_venta, pagos_venta) -> None:
     usuario = ctx.usuario
     anulada = venta["estado"] == "anulada"
-    with card(acento="izquierdo", key="ot-card-ventas-detalle"):
-        titulo_seccion(f"Venta {_texto(venta['numero'])}")
+    with card(acento="izquierdo", key="ot-card-detalle-venta"):
+        estado = chip_estado("Anulada", "error") if anulada else chip_estado("Confirmada", "exito")
         st.markdown(
-            chip_estado("Anulada", "error") if anulada else chip_estado("Confirmada", "exito"),
+            f'<div class="ot-detalle__cabecera"><span class="ot-detalle__titulo">Venta N.º '
+            f'{html.escape(_texto(venta["numero"]))}</span>{estado}</div>',
             unsafe_allow_html=True,
         )
         col_a, col_b = st.columns(2)

@@ -121,6 +121,25 @@ de la fecha.
   consolidados en `core/ui.py`, Material Symbols autoalojado). Estado
   actual de `main` en el momento de escribir esta documentación.
 
+## Tablas rediseñadas: solo lo esencial, en el estilo de la marca (2026-11-13)
+
+- Se retiró la cuadrícula tipo hoja de cálculo (`st.dataframe`, dibujada
+  en canvas: sin estilo de marca, textos cortados, columnas técnicas) de
+  toda la app. Componentes nuevos en `core/ui.py`, con todo texto escapado:
+  - `fila_html` + filas tipo tarjeta: **Ventas** (qué se vendió, cliente,
+    N.º/fecha/pago, total; "Ver" abre el detalle justo debajo),
+    **Productos** (nombre, categoría/código, precio y chip de stock;
+    "Editar" abre el formulario debajo) y **Usuarios** ("Gestionar" abre
+    editar/clave/estado debajo). Paginación "Mostrar más".
+  - `barras_ranking`: Análisis por método de pago, canal y categoría.
+  - `tabla_html`: ventas del día, stock sin ventas, registro de seguridad,
+    importación e integridad; en celular cada fila se vuelve tarjeta.
+  - Etiquetas: buscador de productos + lista con cantidades.
+- En celular el menú lateral se cierra solo al elegir una opción, y las
+  cifras de Ventas van en una sola franja.
+- Descargas diferidas (el archivo se genera al pulsar) y sin recargar la
+  página al descargar; elimina errores 404 en la consola.
+
 ## Fluidez: sin saltos ni animaciones, Vender y Ventas en tiempo real (2026-11-13)
 
 - **Bug principal corregido**: las tarjetas recibían una clave NUEVA en

@@ -34,6 +34,7 @@ from core.timeutil import now_utc, parse_iso_utc, to_iso_utc
 from core.ui import (
     ICONOS_VISTA,
     card,
+    cerrar_menu_en_movil,
     chip_estado,
     encabezado_marca,
     logo_path,
@@ -294,6 +295,7 @@ def _render_app(storage, sesion: dict) -> None:
                     use_container_width=True,
                 ):
                     st.session_state["vista_actual"] = vista["key"]
+                    st.session_state["_ot_cerrar_menu_movil"] = True
                     st.rerun()
         seleccion = st.session_state["vista_actual"]
 
@@ -304,6 +306,8 @@ def _render_app(storage, sesion: dict) -> None:
             st.rerun()
         pie_pagina()
 
+    if st.session_state.pop("_ot_cerrar_menu_movil", False):
+        cerrar_menu_en_movil()
     vista = next(v for v in vistas if v["key"] == seleccion)
     usuario = auth.Usuario(
         id=sesion["usuario_id"],

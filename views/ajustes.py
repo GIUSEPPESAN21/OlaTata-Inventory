@@ -26,6 +26,10 @@ from core.sincronizacion import (
 )
 from core.timeutil import parse_iso_utc
 from core.ui import (
+    fila_html,
+    boton_ver_mas,
+    limite_paginado,
+    tabla_html,
     card,
     chip_estado,
     confirmacion_coincide,
@@ -37,7 +41,6 @@ from core.ui import (
     md_seguro,
     mensaje_error_amable,
     resumen_estado_sync,
-    tabla_amigable,
     titulo_seccion,
     validar_password,
 )
@@ -255,47 +258,62 @@ def _crear_usuario(ctx: ViewContext, nombre: str, usuario_nuevo: str, rol: str, 
         ctx.rerun()
 
 
+def _seleccionar_usuario(usuario_id: str | None) -> None:
+    st.session_state["ajustes_usuario_sel"] = usuario_id
+
+
 def _fila_usuario(ctx: ViewContext, fila) -> None:
+    """Una fila por persona (nombre, usuario · rol, estado). "Gestionar"
+    abre justo debajo todas sus acciones: editar (maestro), clave y estado."""
+    uid = str(fila["id"])
+    activo = bool(fila["activo"])
+    abierto = st.session_state.get("ajustes_usuario_sel") == uid
+    estado = chip_estado("Activo", "exito") if activo else chip_estado("Inactivo", "error", icono="pause_circle")
+    with st.container(key=f"ot-fila-{'sel-' if abierto else ''}usuario-{uid}"):
+        c1, c2 = st.columns([10, 2], vertical_alignment="center")
+        c1.markdown(
+            fila_html(str(fila["nombre"]), sub=f"{fila['usuario']} · {nombre_rol(fila['rol'])}", chips_html=estado),
+            unsafe_allow_html=True,
+        )
+        c2.button(
+            "Cerrar" if abierto else "Gestionar",
+            key=f"ajustes_gestionar_{uid}",
+            icon=":material/close:" if abierto else ":material/manage_accounts:",
+            on_click=_seleccionar_usuario,
+            args=(None if abierto else uid,),
+            use_container_width=True,
+        )
+    if abierto:
+        with card(acento="izquierdo", key="ot-card-detalle-usuario"):
+            _panel_usuario(ctx, fila)
+
+
+def _panel_usuario(ctx: ViewContext, fila) -> None:
     storage = ctx.storage
     activo = bool(fila["activo"])
-    col1, col2, col3 = st.columns([3, 2, 3])
-    with col1:
-        st.markdown(f"**{md_seguro(fila['nombre'])}** ({md_seguro(fila['usuario'])}) — {nombre_rol(fila['rol'])}")
-    with col2:
-        if activo:
-            st.markdown(chip_estado("Activo", "exito"), unsafe_allow_html=True)
-        else:
-            st.markdown(chip_estado("Inactivo", "error", icono="pause_circle"), unsafe_allow_html=True)
-    with col3:
-        es_cuenta_maestra = fila["rol"] == MAESTRO
-        if tiene_capacidad(ctx.usuario.rol, "editar_usuarios"):
-            _popover_editar_usuario(ctx, fila)
-        if es_cuenta_maestra:
-            st.caption("Cuenta maestra: no se puede desactivar.")
-            return
-        clave_mostrar_confirmacion = f"ajustes_confirmar_{fila['id']}"
-        accion = "Desactivar" if activo else "Activar"
-        if st.button(accion, key=f"ajustes_btn_{fila['id']}", use_container_width=True):
-            st.session_state[clave_mostrar_confirmacion] = True
-
-        if st.session_state.get(clave_mostrar_confirmacion):
-            texto = st.text_input(
-                f"Escribe '{fila['usuario']}' para confirmar",
-                key=f"ajustes_input_{fila['id']}",
-            )
-            if st.button("Confirmar", key=f"ajustes_confirmar_btn_{fila['id']}"):
-                if not confirmacion_coincide(str(fila["usuario"]), texto):
-                    st.error("El texto no coincide con el usuario.")
-                else:
-                    _alternar_activo(ctx, storage, fila, activo)
-
-        if activo and fila["id"] != ctx.usuario.id:
-            with st.popover("Restablecer clave", icon=":material/lock_reset:", use_container_width=True):
-                st.caption(
-                    "Genera una clave temporal nueva, cierra todas sus sesiones abiertas y le pedirá "
-                    "cambiarla al ingresar. Entrégala en persona."
-                )
-                if st.button("Generar clave temporal", key=f"ajustes_reset_{fila['id']}", type="primary"):
+    es_cuenta_maestra = fila["rol"] == MAESTRO
+    es_uno_mismo = str(fila["id"]) == str(ctx.usuario.id)
+    secciones = []
+    if tiene_capacidad(ctx.usuario.rol, "editar_usuarios"):
+        secciones.append("editar")
+    if activo and not es_uno_mismo and not es_cuenta_maestra:
+        secciones.append("clave")
+    if not es_cuenta_maestra and not es_uno_mismo:
+        secciones.append("estado")
+    if not secciones:
+        st.caption("No hay acciones disponibles para esta cuenta.")
+        return
+    columnas = st.columns(len(secciones), gap="large")
+    for col, seccion in zip(columnas, secciones):
+        with col:
+            if seccion == "editar":
+                st.markdown("**Editar datos**")
+                _form_editar_usuario(ctx, fila)
+            elif seccion == "clave":
+                st.markdown("**Clave**")
+                st.caption("Genera una clave temporal, cierra sus sesiones y le pide cambiarla al ingresar.")
+                if st.button("Restablecer clave", key=f"ajustes_reset_{fila['id']}", icon=":material/lock_reset:",
+                             use_container_width=True):
                     try:
                         with storage.transaction() as tx:
                             clave = seguridad.restablecer_password(tx, ctx.usuario.rol, ctx.usuario.id, fila["id"])
@@ -307,45 +325,56 @@ def _fila_usuario(ctx: ViewContext, fila) -> None:
                     else:
                         st.success("Clave restablecida. Cópiala ahora: no se volverá a mostrar.")
                         st.code(clave, language=None)
+            else:
+                st.markdown("**Estado**")
+                st.caption("Desactivar cierra su sesión de inmediato y conserva su historial." if activo
+                           else "Activar le permite volver a ingresar.")
+                texto = st.text_input(f"Escribe '{fila['usuario']}' para confirmar", key=f"ajustes_input_{fila['id']}")
+                if st.button("Desactivar" if activo else "Activar", key=f"ajustes_btn_{fila['id']}",
+                             icon=":material/person_off:" if activo else ":material/person_check:",
+                             use_container_width=True):
+                    if not confirmacion_coincide(str(fila["usuario"]), texto):
+                        st.error("El texto no coincide con el usuario.")
+                    else:
+                        _alternar_activo(ctx, storage, fila, activo)
 
 
-def _popover_editar_usuario(ctx: ViewContext, fila) -> None:
+def _form_editar_usuario(ctx: ViewContext, fila) -> None:
     """Solo el maestro: cambiar nombre, usuario y rol de una cuenta."""
     es_cuenta_maestra = fila["rol"] == MAESTRO
-    with st.popover("Editar", icon=":material/edit:", use_container_width=True):
-        with st.form(f"ajustes_editar_{fila['id']}"):
-            nombre = st.text_input("Nombre completo", value=str(fila["nombre"]))
-            usuario = st.text_input("Usuario", value=str(fila["usuario"]))
-            if es_cuenta_maestra:
-                st.caption("Rol: Maestro (no se cambia).")
-                rol = None
-            else:
-                opciones = ["vendedor", "admin"]
-                rol = st.selectbox(
-                    "Rol", opciones, index=opciones.index(fila["rol"]) if fila["rol"] in opciones else 0,
-                    format_func=nombre_rol,
+    with st.form(f"ajustes_editar_{fila['id']}"):
+        nombre = st.text_input("Nombre completo", value=str(fila["nombre"]))
+        usuario = st.text_input("Usuario", value=str(fila["usuario"]))
+        if es_cuenta_maestra:
+            st.caption("Rol: Maestro (no se cambia).")
+            rol = None
+        else:
+            opciones = ["vendedor", "admin"]
+            rol = st.selectbox(
+                "Rol", opciones, index=opciones.index(fila["rol"]) if fila["rol"] in opciones else 0,
+                format_func=nombre_rol,
+            )
+        guardar = st.form_submit_button("Guardar cambios", type="primary", use_container_width=True)
+    if guardar:
+        try:
+            with ctx.storage.transaction() as tx:
+                cambios = seguridad.editar_usuario(
+                    tx, ctx.usuario.rol, ctx.usuario.id, fila["id"], nombre=nombre, usuario=usuario, rol=rol
                 )
-            guardar = st.form_submit_button("Guardar cambios", type="primary", use_container_width=True)
-        if guardar:
-            try:
-                with ctx.storage.transaction() as tx:
-                    cambios = seguridad.editar_usuario(
-                        tx, ctx.usuario.rol, ctx.usuario.id, fila["id"], nombre=nombre, usuario=usuario, rol=rol
-                    )
-            except (PermisoDenegadoError, ValueError) as exc:
-                st.error(str(exc))
-            except Exception as exc:  # nunca una traza visible
-                mensaje, _codigo = mensaje_error_amable(exc, contexto="editar_usuario")
-                st.error(mensaje)
+        except (PermisoDenegadoError, ValueError) as exc:
+            st.error(str(exc))
+        except Exception as exc:  # nunca una traza visible
+            mensaje, _codigo = mensaje_error_amable(exc, contexto="editar_usuario")
+            st.error(mensaje)
+        else:
+            if not cambios:
+                st.info("No había cambios.")
+            elif fila["id"] == ctx.usuario.id and "usuario" in cambios:
+                st.success("Guardado. Como cambiaste tu usuario, vuelve a ingresar con el nuevo.")
+                ctx.rerun()
             else:
-                if not cambios:
-                    st.info("No había cambios.")
-                elif fila["id"] == ctx.usuario.id and "usuario" in cambios:
-                    st.success("Guardado. Como cambiaste tu usuario, vuelve a ingresar con el nuevo.")
-                    ctx.rerun()
-                else:
-                    st.success("Cambios guardados." + (" Sus sesiones abiertas se cerraron." if {"usuario", "rol"} & set(cambios) else ""))
-                    ctx.rerun()
+                st.success("Cambios guardados." + (" Sus sesiones abiertas se cerraron." if {"usuario", "rol"} & set(cambios) else ""))
+                ctx.rerun()
 
 
 def _tab_datos_prueba(ctx: ViewContext) -> None:
@@ -501,15 +530,34 @@ def _registro_seguridad(ctx: ViewContext) -> None:
             "desactivar_usuario": "Usuario desactivado",
             "cerrar_mes": "Cierre de mes",
         }
-        tabla = pd.DataFrame(
+        acciones.update({
+            "editar_usuario": "Usuario editado",
+            "editar_venta": "Venta editada",
+            "asignar_maestro": "Cuenta maestra asignada",
+            "crear_datos_prueba": "Datos de prueba creados",
+            "eliminar_datos_prueba": "Datos de prueba eliminados",
+            "iniciar_produccion": "Inicio de operación real",
+        })
+        filas = [
             {
-                "fecha_hora_utc": eventos["ts"],
-                "usuario": eventos["usuario"].astype(str).map(lambda u: nombres.get(u, u)),
-                "accion": eventos["accion"].astype(str).map(lambda a: acciones.get(a, a)),
-                "detalle": eventos["detalle"].fillna(""),
+                "fecha": fila["ts"],
+                "usuario": nombres.get(str(fila["usuario"]), str(fila["usuario"])),
+                "accion": acciones.get(str(fila["accion"]), str(fila["accion"])),
+                "detalle": "" if pd.isna(fila["detalle"]) else str(fila["detalle"]),
             }
+            for _, fila in eventos.iterrows()
+        ]
+        limite = limite_paginado("ajustes_registro", "fijo", paso=15)
+        tabla_html(
+            filas[:limite],
+            [
+                {"clave": "fecha", "titulo": "Fecha", "tipo": "fecha_utc"},
+                {"clave": "accion", "titulo": "Evento", "destacar": True},
+                {"clave": "usuario", "titulo": "Usuario"},
+                {"clave": "detalle", "titulo": "Detalle"},
+            ],
         )
-        st.dataframe(tabla_amigable(tabla), use_container_width=True, hide_index=True)
+        boton_ver_mas("ajustes_registro", len(filas), min(limite, len(filas)))
 
 
 # -------------------------------------------------------- sincronización
@@ -628,6 +676,7 @@ def _tab_respaldo(ctx: ViewContext) -> None:
         st.download_button(
             "Descargar respaldo (.xlsx)",
             data=contenido,
+            on_click="ignore",
             file_name=Path(local_path).name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,

@@ -14,18 +14,22 @@ import secrets
 import pandas as pd
 import streamlit as st
 
-from core import costing, etiquetas, importer, inventory
+from core import costing, etiquetas, importer, inventory, schema
 from core.money import DineroInvalidoError, format_cop
 from core.permissions import PermisoDenegadoError, requerir, tiene_capacidad
 from core.schema import SEDE_PRINCIPAL
 from core.ui import (
     boton_imprimir_pdf,
+    tabla_html,
+    boton_ver_mas,
+    chip_stock,
+    fila_html,
+    limite_paginado,
     card,
     chip_estado,
     encabezado_pagina,
     estado_vacio,
     guia,
-    tabla_amigable,
     titulo_seccion,
 )
 from views import ViewContext
@@ -108,49 +112,59 @@ def _tab_productos(ctx: ViewContext, rol: str) -> None:
         st.error(_mensaje_amigable(exc, "filtrar productos"))
         return
 
-    if filtrados.empty:
-        estado_vacio(
-            "No hay productos que coincidan con estos filtros.",
-            "Crea uno nuevo con el formulario de abajo.",
-            icono="search_off",
-        )
-    else:
-        mostrar = filtrados.copy()
-        mostrar["costo"] = mostrar["costo"].apply(lambda v: format_cop(int(v)) if pd.notna(v) else "—")
-        mostrar["precio"] = mostrar["precio"].apply(lambda v: format_cop(int(v)) if pd.notna(v) else "—")
-        with card(acento="superior"):
-            st.dataframe(
-                tabla_amigable(
-                    mostrar[
-                        [
-                            "id",
-                            "nombre",
-                            "categoria",
-                            "stock_actual",
-                            "stock_minimo",
-                            "costo",
-                            "precio",
-                            "codigo_barras",
-                            "activo",
-                        ]
-                    ]
-                ),
-                use_container_width=True,
-                hide_index=True,
-            )
-
     with card(acento="izquierdo"):
         with st.expander("Nuevo producto", icon=":material/add_box:", key="inv_exp_nuevo_producto"):
             _form_nuevo_producto(ctx, rol)
 
-    if not productos.empty:
-        with card(acento="izquierdo"):
-            titulo_seccion("Editar / activar / desactivar")
-            opciones = {f"{fila['id']} · {fila['nombre']}": fila["id"] for _, fila in productos.iterrows()}
-            seleccion = st.selectbox("Producto", options=list(opciones.keys()), key="inv_editar_select")
-            if seleccion:
-                producto_id = opciones[seleccion]
-                _form_editar_producto(ctx, rol, producto_id, productos)
+    if filtrados.empty:
+        estado_vacio(
+            "No hay productos que coincidan con estos filtros.",
+            "Crea uno nuevo con «Nuevo producto».",
+            icono="search_off",
+        )
+        return
+
+    firma = f"{busqueda}|{categoria}|{bajo_minimo}|{sin_stock}"
+    limite = limite_paginado("inv_lista", firma, paso=20)
+    abierto = st.session_state.get("inv_producto_sel")
+    st.caption(f"{len(filtrados)} producto(s). Pulsa «Editar» para cambiar datos, precio o desactivarlo.")
+    for _, fila in filtrados.head(limite).iterrows():
+        _fila_producto(ctx, rol, fila, abierto, productos)
+    boton_ver_mas("inv_lista", len(filtrados), min(limite, len(filtrados)), paso=20)
+
+
+def _seleccionar_producto(producto_id: str | None) -> None:
+    st.session_state["inv_producto_sel"] = producto_id
+
+
+def _fila_producto(ctx: ViewContext, rol: str, fila, abierto, productos: pd.DataFrame) -> None:
+    """Fila de producto: nombre, categoría/código, precio y existencias.
+    Al pulsar "Editar" el formulario se abre justo debajo."""
+    pid = str(fila["id"])
+    es_abierto = abierto == pid
+
+    def _txt(valor) -> str:
+        return "" if pd.isna(valor) else str(valor).strip()
+
+    sub = " · ".join(x for x in (_txt(fila["categoria"]), _txt(fila["color"]),
+                                  etiquetas.codigo_para_producto(pid, _txt(fila["codigo_barras"]))) if x)
+    precio = format_cop(int(fila["precio"])) if pd.notna(fila["precio"]) else "—"
+    minimo = int(fila["stock_minimo"]) if pd.notna(fila["stock_minimo"]) else 0
+    chips = chip_stock(int(fila["stock_actual"]), minimo, bool(fila["activo"]))
+    with st.container(key=f"ot-fila-{'sel-' if es_abierto else ''}producto-{pid}"):
+        c1, c2 = st.columns([10, 2], vertical_alignment="center")
+        c1.markdown(fila_html(_txt(fila["nombre"]), sub=sub, valor=precio, chips_html=chips), unsafe_allow_html=True)
+        c2.button(
+            "Cerrar" if es_abierto else "Editar",
+            key=f"inv_editar_{pid}",
+            icon=":material/close:" if es_abierto else ":material/edit:",
+            on_click=_seleccionar_producto,
+            args=(None if es_abierto else pid,),
+            use_container_width=True,
+        )
+    if es_abierto:
+        with card(acento="izquierdo", key="ot-card-detalle-producto"):
+            _form_editar_producto(ctx, rol, pid, productos)
 
 
 def _form_nuevo_producto(ctx: ViewContext, rol: str) -> None:
@@ -430,7 +444,8 @@ def _tab_importar(ctx: ViewContext, rol: str) -> None:
 
     st.download_button(
         "Descargar plantilla (CSV)",
-        data=_plantilla_csv_bytes(),
+        data=_plantilla_csv_bytes,
+        on_click="ignore",
         file_name="plantilla_inventario_ola_tata.csv",
         mime="text/csv",
         icon=":material/download:",
@@ -459,27 +474,31 @@ def _tab_importar(ctx: ViewContext, rol: str) -> None:
 
     if resultado.errores:
         st.error("Hay errores en algunas filas. Corrígelas y vuelve a subir el archivo; no se importó nada.")
-        st.dataframe(
-            tabla_amigable(pd.DataFrame([{"fila": e.fila, "columna": e.columna, "error": e.mensaje} for e in resultado.errores])),
-            use_container_width=True,
-            hide_index=True,
+        tabla_html(
+            [{"fila": e.fila, "columna": e.columna, "mensaje": e.mensaje} for e in resultado.errores],
+            [{"clave": "fila", "titulo": "Fila", "tipo": "numero"}, {"clave": "columna", "titulo": "Columna"},
+             {"clave": "mensaje", "titulo": "Qué corregir", "destacar": True}],
         )
 
     if resultado.advertencias:
         st.warning("Hay advertencias (no bloquean la importación):")
-        st.dataframe(
-            tabla_amigable(
-                pd.DataFrame(
-                    [{"fila": a.fila, "columna": a.columna, "advertencia": a.mensaje} for a in resultado.advertencias]
-                )
-            ),
-            use_container_width=True,
-            hide_index=True,
+        tabla_html(
+            [{"fila": a.fila, "columna": a.columna, "mensaje": a.mensaje} for a in resultado.advertencias],
+            [{"clave": "fila", "titulo": "Fila", "tipo": "numero"}, {"clave": "columna", "titulo": "Columna"},
+             {"clave": "mensaje", "titulo": "Advertencia"}],
         )
 
     if resultado.filas_validas:
         titulo_seccion("Vista previa de lo que se va a importar")
-        st.dataframe(tabla_amigable(pd.DataFrame(resultado.filas_validas)), use_container_width=True, hide_index=True)
+        vista = resultado.filas_validas[:50]
+        tabla_html(
+            vista,
+            [{"clave": "nombre", "titulo": "Producto", "destacar": True}, {"clave": "categoria", "titulo": "Categoría"},
+             {"clave": "precio", "titulo": "Precio", "tipo": "dinero"},
+             {"clave": "cantidad_inicial", "titulo": "Unidades", "tipo": "numero"}],
+        )
+        if len(resultado.filas_validas) > len(vista):
+            st.caption(f"…y {len(resultado.filas_validas) - len(vista)} producto(s) más.")
 
     if resultado.ok and resultado.filas_validas:
         confirmar = st.checkbox("Confirmo que revisé la vista previa y quiero importar estas filas.")
@@ -541,56 +560,53 @@ def _tab_etiquetas(ctx: ViewContext, rol: str) -> None:
 
     with card(acento="superior"):
         titulo_seccion("¿Qué etiquetas imprimir?")
-        busqueda = st.text_input("Filtrar productos", key="etq_filtro", icon=":material/search:")
-        tabla = productos.copy()
-        if busqueda.strip():
-            patron = busqueda.strip().lower()
-            tabla = tabla[
-                tabla["nombre"].astype(str).str.lower().str.contains(patron, regex=False)
-                | tabla["id"].astype(str).str.lower().str.contains(patron, regex=False)
-            ]
-        editor = pd.DataFrame(
-            {
-                "imprimir": False,
-                "id": tabla["id"].astype(str),
-                "producto": tabla["nombre"].astype(str),
-                "precio": tabla["precio"].apply(lambda v: format_cop(int(v)) if pd.notna(v) else "—"),
-                "stock": tabla["stock_actual"].astype(int),
-                "cantidad": tabla["stock_actual"].astype(int).clip(lower=1),
-            }
-        )
-        editado = st.data_editor(
-            editor,
-            hide_index=True,
-            use_container_width=True,
-            key=f"etq_editor_{busqueda.strip().lower()}",
-            disabled=["id", "producto", "precio", "stock"],
-            column_config={
-                "imprimir": st.column_config.CheckboxColumn("Imprimir"),
-                "id": st.column_config.TextColumn("Código"),
-                "producto": st.column_config.TextColumn("Producto"),
-                "precio": st.column_config.TextColumn("Precio"),
-                "stock": st.column_config.NumberColumn("Stock"),
-                "cantidad": st.column_config.NumberColumn("Cantidad de etiquetas", min_value=1, max_value=500, step=1),
-            },
+        # Buscador con escritura: se escribe parte del nombre o del código y
+        # se eligen los productos (antes: cuadrícula con casillas).
+        por_id = productos.set_index(productos["id"].astype(str))
+        opciones = list(por_id.index)
+
+        def _etiqueta_opcion(pid: str) -> str:
+            fila = por_id.loc[pid]
+            precio = format_cop(int(fila["precio"])) if pd.notna(fila["precio"]) else "—"
+            codigo = etiquetas.codigo_para_producto(pid, fila.get("codigo_barras"))
+            return f"{fila['nombre']} · {precio} · {int(fila['stock_actual'])} en stock · {codigo}"
+
+        elegidos_ids = st.multiselect(
+            "Productos",
+            opciones,
+            format_func=_etiqueta_opcion,
+            key="etq_productos",
+            placeholder="Escribe el nombre o el código y elige…",
         )
         incluir_precio = st.checkbox("Incluir precio en la etiqueta", value=True, key="etq_precio")
+        cantidades: dict[str, int] = {}
+        if elegidos_ids:
+            st.caption("Cantidad de etiquetas por producto (por defecto, una por unidad en stock):")
+        for pid in elegidos_ids:
+            fila = por_id.loc[pid]
+            c1, c2 = st.columns([7, 2], vertical_alignment="center")
+            c1.markdown(
+                fila_html(str(fila["nombre"]), sub=etiquetas.codigo_para_producto(pid, fila.get("codigo_barras"))),
+                unsafe_allow_html=True,
+            )
+            cantidades[pid] = int(c2.number_input(
+                "Etiquetas", min_value=1, max_value=500, step=1, key=f"etq_cant_{pid}",
+                value=max(1, int(fila["stock_actual"])), label_visibility="collapsed",
+            ))
 
-    elegidos = editado[editado["imprimir"]]
-    if elegidos.empty:
-        st.caption("Marca la casilla **Imprimir** de cada producto (por defecto, una etiqueta por unidad en stock).")
+    if not elegidos_ids:
+        st.caption("Busca y elige los productos a etiquetar en el campo **Productos**.")
         return
 
-    por_id = productos.set_index(productos["id"].astype(str))
     items: list[etiquetas.ItemEtiqueta] = []
     codigos_largos: list[str] = []
-    for _, fila in elegidos.iterrows():
-        prod = por_id.loc[fila["id"]]
-        codigo = etiquetas.codigo_para_producto(fila["id"], prod.get("codigo_barras"))
+    for pid in elegidos_ids:
+        prod = por_id.loc[pid]
+        codigo = etiquetas.codigo_para_producto(pid, prod.get("codigo_barras"))
         if etiquetas.modulo_barras_px(codigo, perfil.mm_a_px(perfil.ancho_mm - 2.4)) < 2:
             codigos_largos.append(f"{prod['nombre']} ({codigo})")
         precio = int(prod["precio"]) if incluir_precio and pd.notna(prod["precio"]) else None
-        items += [etiquetas.ItemEtiqueta(str(prod["nombre"]), codigo, precio)] * int(fila["cantidad"] or 1)
+        items += [etiquetas.ItemEtiqueta(str(prod["nombre"]), codigo, precio)] * cantidades.get(pid, 1)
 
     filas = (len(items) + perfil.columnas - 1) // perfil.columnas
     st.markdown(
@@ -631,7 +647,11 @@ def _tab_etiquetas(ctx: ViewContext, rol: str) -> None:
             invertir = st.checkbox("Invertir blanco/negro (solo si sale en negativo)", key="etq_tspl_inv")
             st.download_button(
                 "Descargar archivo TSPL (.prn)",
-                data=etiquetas.generar_tspl(items, perfil, invertir=invertir),
+                # Se genera solo al pulsar (no en cada clic de la pantalla).
+                data=lambda items=items, perfil=perfil, invertir=invertir: etiquetas.generar_tspl(
+                    items, perfil, invertir=invertir
+                ),
+                on_click="ignore",
                 file_name="etiquetas_ola_tata.prn",
                 mime="application/octet-stream",
                 icon=":material/download:",
@@ -728,19 +748,16 @@ def _tab_integridad(ctx: ViewContext, rol: str) -> None:
             st.success("Todo cuadra: el stock de cada producto coincide con su historial de movimientos.")
         else:
             st.error(f"Se encontraron {len(diferencias)} diferencia(s). Revisa el kardex de estos productos.")
-            st.dataframe(
-                tabla_amigable(pd.DataFrame(
-                    [
-                        {
-                            "producto_id": d.producto_id,
-                            "sede": d.sede_id,
-                            "stock_en_hoja": d.stock_en_hoja,
-                            "stock_recalculado": d.stock_recalculado,
-                            "diferencia": d.diferencia,
-                        }
-                        for d in diferencias
-                    ]
-                )),
-                use_container_width=True,
-                hide_index=True,
+            productos_todos = ctx.storage.read_sheet(schema.PRODUCTOS)
+            nombres = dict(zip(productos_todos["id"].astype(str), productos_todos["nombre"].astype(str)))
+            tabla_html(
+                [
+                    {"producto": nombres.get(str(d.producto_id), str(d.producto_id)),
+                     "registrado": d.stock_en_hoja, "real": d.stock_recalculado, "diferencia": d.diferencia}
+                    for d in diferencias
+                ],
+                [{"clave": "producto", "titulo": "Producto", "destacar": True},
+                 {"clave": "registrado", "titulo": "Stock registrado", "tipo": "numero"},
+                 {"clave": "real", "titulo": "Según movimientos", "tipo": "numero"},
+                 {"clave": "diferencia", "titulo": "Diferencia", "tipo": "numero", "destacar": True}],
             )

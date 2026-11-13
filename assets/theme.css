@@ -913,3 +913,202 @@ button:focus-visible {
   font-size: 1.1rem;
   white-space: nowrap;
 }
+
+/* ======================================================================
+   Tablas y listas de marca (core.ui.tabla_html / fila_html / barras_ranking)
+   ====================================================================== */
+.ot-tabla-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+.ot-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+.ot-tabla th {
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ot-texto-secundario);
+  padding: 0.45rem 0.75rem;
+  border-bottom: 2px solid var(--ot-rosa-veta);
+  white-space: nowrap;
+}
+.ot-tabla td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid #F6DCE6;
+  color: var(--ot-tinta);
+  vertical-align: middle;
+}
+.ot-tabla tbody tr:last-child td { border-bottom: none; }
+.ot-tabla tbody tr:hover td { background: #FFF7FA; }
+.ot-tabla th.ot-tabla__dinero, .ot-tabla td.ot-tabla__dinero,
+.ot-tabla th.ot-tabla__numero, .ot-tabla td.ot-tabla__numero {
+  text-align: right;
+  white-space: nowrap;
+}
+.ot-tabla td.ot-tabla__fecha_utc, .ot-tabla td.ot-tabla__hora_utc { white-space: nowrap; color: var(--ot-texto-secundario); }
+.ot-tabla td.ot-tabla__destacar { font-weight: 600; }
+.ot-tabla__vacio { color: var(--ot-texto-secundario); }
+@media (max-width: 640px) {
+  .ot-tabla thead { display: none; }
+  .ot-tabla, .ot-tabla tbody, .ot-tabla tr, .ot-tabla td { display: block; width: 100%; }
+  .ot-tabla tr {
+    border: 1px solid var(--ot-rosa-veta);
+    border-radius: 12px;
+    margin-bottom: 0.6rem;
+    padding: 0.35rem 0.75rem;
+    background: var(--ot-superficie);
+  }
+  .ot-tabla td {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    border-bottom: 1px dashed #F6DCE6;
+    padding: 0.4rem 0;
+    text-align: right !important;
+  }
+  .ot-tabla td::before {
+    content: attr(data-etiqueta);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ot-texto-secundario);
+    text-align: left;
+  }
+}
+
+/* Barras de ranking */
+.ot-barras { display: flex; flex-direction: column; gap: 0.7rem; }
+.ot-barra__cabeza {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 0.25rem;
+}
+.ot-barra__etiqueta { font-weight: 500; color: var(--ot-tinta); }
+.ot-barra__valor { font-weight: 700; color: var(--ot-tinta); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ot-barra__pista {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(194, 24, 91, 0.10);
+  overflow: hidden;
+}
+.ot-barra__relleno {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--ot-primario), var(--ot-rosa-marca));
+}
+.ot-barra__detalle { font-size: 0.8rem; color: var(--ot-texto-secundario); }
+.ot-barra--negativa .ot-barra__valor { color: var(--ot-error); }
+.ot-barra--negativa .ot-barra__relleno { background: var(--ot-error); }
+
+/* Filas de lista (Ventas, Productos): cada fila es una tarjeta compacta */
+[class*="st-key-ot-fila-"] {
+  background: var(--ot-superficie);
+  border: 1px solid var(--ot-rosa-veta);
+  border-radius: 14px;
+  padding: 0.55rem 0.85rem;
+  margin-bottom: 0.15rem;
+}
+[class*="st-key-ot-fila-"]:hover { border-color: var(--ot-dorado-brillo); }
+[class*="st-key-ot-fila-sel-"] {
+  border: 2px solid var(--ot-primario);
+  background: #FFF7FA;
+}
+.ot-fila {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+}
+.ot-fila__principal { min-width: 0; flex: 1 1 auto; }
+.ot-fila__titulo {
+  font-weight: 600;
+  color: var(--ot-tinta);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ot-fila__sub {
+  font-size: 0.88rem;
+  color: var(--ot-texto-secundario);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ot-fila__meta { font-size: 0.78rem; color: var(--ot-texto-secundario); margin-top: 0.1rem; }
+.ot-fila__derecha {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+  flex: 0 0 auto;
+}
+.ot-fila__valor {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--ot-tinta);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ot-fila .ot-chip { font-size: 0.78rem; line-height: 1.4; }
+/* El detalle/edición que se abre bajo una fila queda "pegado" a ella */
+[class*="st-key-ot-card-detalle-"] { margin-top: -0.35rem; }
+
+/* Ajustes finos de filas y tablas */
+/* st.markdown deja un margen inferior negativo en su último bloque: dentro
+   de una fila hacía que el chip/la línea pequeña pisaran el borde. */
+[class*="st-key-ot-fila-"] [data-testid="stMarkdownContainer"] > div:last-child,
+[class*="st-key-ot-fila-"] [data-testid="stMarkdown"] {
+  margin-bottom: 0 !important;
+}
+.ot-fila { padding: 0.15rem 0; }
+/* Sin las líneas verticales que Streamlit pone a las tablas de markdown */
+.ot-tabla, .ot-tabla th, .ot-tabla td {
+  border-left: none !important;
+  border-right: none !important;
+  border-top: none !important;
+  background: transparent;
+}
+.ot-tabla th { border-bottom: 2px solid var(--ot-rosa-veta) !important; }
+.ot-tabla td { border-bottom: 1px solid #F6DCE6 !important; }
+.ot-tabla tbody tr:last-child td { border-bottom: none !important; }
+/* Cabecera compacta del detalle que se abre bajo una fila */
+.ot-detalle__cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.ot-detalle__titulo { font-weight: 700; font-size: 1.05rem; color: var(--ot-tinta); }
+/* Causa medida: [data-testid="stMarkdownContainer"] trae margin-bottom:-1rem
+   (-18px); el contenido de filas, tablas y barras se salía 18px de su caja. */
+[data-testid="stMarkdownContainer"]:has(> .ot-fila),
+[data-testid="stMarkdownContainer"]:has(> .ot-tabla-wrap),
+[data-testid="stMarkdownContainer"]:has(> .ot-barras),
+[data-testid="stMarkdownContainer"]:has(> .ot-detalle__cabecera) {
+  margin-bottom: 0 !important;
+}
+/* Franja de cifras de Ventas: siempre en una fila (también en celular) */
+.ot-mini-kpis {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.ot-mini-kpis .ot-mini-kpi { flex: 1 1 0; min-width: 0; margin-bottom: 0; }
+[data-testid="stMarkdownContainer"]:has(> .ot-mini-kpis) { margin-bottom: 0 !important; }
+@media (max-width: 640px) {
+  .ot-mini-kpis { gap: 0.4rem; }
+  .ot-mini-kpis .ot-mini-kpi { flex-direction: column; gap: 0.15rem; padding: 0.5rem 0.3rem; text-align: center; }
+  .ot-mini-kpis .ot-mini-kpi .material-symbols-outlined { font-size: 20px; }
+  .ot-mini-kpis .ot-mini-kpi__valor { font-size: 1rem; white-space: nowrap; }
+  .ot-mini-kpis .ot-mini-kpi__etiqueta { font-size: 0.62rem; letter-spacing: 0.04em; }
+}
