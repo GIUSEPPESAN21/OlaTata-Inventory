@@ -35,6 +35,9 @@ CLAVES_OPERACION = frozenset(
         # que un admin vea en qué quedó un cierre interrumpido. NUNCA se
         # usa para decidir por dónde reanudar (ver core/monthly_close.py).
         "cierre::progreso",
+        # Perfil del rollo de etiquetas (JSON de core.etiquetas.PerfilEtiqueta):
+        # medidas, etiquetas por fila, separaciones y dpi. Inventario -> Etiquetas.
+        "etiquetas_perfil",
     }
 )
 

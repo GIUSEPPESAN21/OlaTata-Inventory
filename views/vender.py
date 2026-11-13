@@ -14,12 +14,24 @@ import uuid
 import streamlit as st
 
 from core import schema
+from core.etiquetas import id_desde_codigo_interno, normalizar_lectura_escaner
 from core.excel_safe import excel_safe
 from core.money import format_cop, parse_pesos
 from core.permissions import PermisoDenegadoError
+from core.recibo_impreso import generar_pdf_recibo
 from core.receipts import generar_texto_recibo, generar_url_whatsapp
 from core.sales import PagoInvalidoError, StockInsuficienteError, VentaInvalidaError, confirmar_venta
-from core.ui import card, chip_estado, encabezado_pagina, estado_vacio, render_logo, titulo_seccion
+from core.ui import (
+    boton_imprimir_pdf,
+    card,
+    chip_estado,
+    encabezado_pagina,
+    enfocar_campo,
+    estado_vacio,
+    mensaje_error_amable,
+    render_logo,
+    titulo_seccion,
+)
 from views import ViewContext
 
 _METODOS_LABEL = {
@@ -138,16 +150,22 @@ def _nueva_venta() -> None:
 
 
 def _buscar_producto(productos_df, texto: str):
-    texto = texto.strip()
+    """Busca por lo que escribió la persona o "tecleó" el lector USB:
+    código de barras propio, código interno de la etiqueta ("20000123"),
+    id ("OT-000123", también si llega como "OT'000123" por la distribución
+    latinoamericana del teclado) o nombre exacto (sin mayúsculas)."""
+    texto = normalizar_lectura_escaner(texto)
     if not texto:
         return None
-    por_codigo = productos_df[productos_df["codigo_barras"].astype(str) == texto]
+    codigos = productos_df["codigo_barras"].astype(str).str.strip()
+    por_codigo = productos_df[codigos == texto]
     if not por_codigo.empty:
         return por_codigo.iloc[0]
-    por_id = productos_df[productos_df["id"].astype(str) == texto]
+    id_buscado = id_desde_codigo_interno(texto) or texto.upper()
+    por_id = productos_df[productos_df["id"].astype(str).str.upper() == id_buscado]
     if not por_id.empty:
         return por_id.iloc[0]
-    por_nombre = productos_df[productos_df["nombre"].astype(str).str.lower() == texto.lower()]
+    por_nombre = productos_df[productos_df["nombre"].astype(str).str.strip().str.lower() == texto.lower()]
     if not por_nombre.empty:
         return por_nombre.iloc[0]
     return None
@@ -204,6 +222,8 @@ def render(ctx: ViewContext) -> None:
                 on_click=_cb_agregar,
                 args=(productos_activos,),
             )
+    # El lector de códigos "teclea" + Enter: el cursor queda listo aquí.
+    enfocar_campo("Buscar por nombre, código o escanear")
     if st.session_state.pop("vender_busqueda_error", False):
         st.error("No se encontró ningún producto con ese nombre/código. Código: VEN-404.")
 
@@ -392,6 +412,20 @@ def _mostrar_recibo(ctx: ViewContext) -> None:
     with card(acento="ninguno", key="ot-card-recibo"):
         render_logo(72, nombre_archivo="olatata-logo-mono.png")
         st.code(generar_texto_recibo(venta), language=None)
+    try:
+        pdf_recibo = generar_pdf_recibo(
+            venta,
+            nombre_negocio=ctx.storage.get_config("negocio_nombre") or "Ola Tata · Bolsos & Accesorios",
+            mensaje=ctx.storage.get_config("negocio_mensaje_recibo") or "¡Gracias por tu compra!",
+            vendedor=getattr(ctx.usuario, "nombre", None),
+        )
+    except Exception as exc:  # imprimir nunca debe tumbar la venta ya guardada
+        mensaje_error, _codigo = mensaje_error_amable(exc, contexto="recibo_pdf")
+        st.warning(mensaje_error)
+    else:
+        boton_imprimir_pdf(
+            pdf_recibo, "Imprimir recibo", nombre_archivo=f"recibo_{venta.numero}.pdf", key="vender_recibo_pdf"
+        )
     telefono = ctx.storage.get_config("telefono_whatsapp")
     url_whatsapp = generar_url_whatsapp(venta, telefono_whatsapp=telefono)
     st.link_button(

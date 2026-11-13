@@ -121,6 +121,25 @@ de la fecha.
   consolidados en `core/ui.py`, Material Symbols autoalojado). Estado
   actual de `main` en el momento de escribir esta documentación.
 
+## Impresión de etiquetas, recibos y lector de códigos (2026-11-13)
+
+- **Etiquetas físicas** (`core/etiquetas.py`): PDF al tamaño real del rollo
+  de la impresora DigitalPOS (por defecto 3 por fila de 32 × 25 mm, 203 dpi),
+  una página por fila. Prioridad: artículo, código de barras, precio
+  ("$ 98.000"). Barras Code128 dibujadas con módulos enteros (nítidas en
+  térmico); código interno numérico `20xxxxxx` para productos sin código
+  propio. Perfiles predefinidos + medidas ajustables guardadas en CONFIG
+  (`etiquetas_perfil`), hoja de prueba de calibración y archivo TSPL como
+  plan B. Pruebas que DECODIFICAN cada etiqueta con zxing-cpp.
+- **Recibo de 80 mm** (`core/recibo_impreso.py`) para la impresora de
+  tirilla con cortador: logo, ítems, totales, pagos y mensaje del negocio.
+- **Botón "Imprimir"** (`core.ui.boton_imprimir_pdf`): abre el diálogo de
+  impresión del sistema con el PDF a tamaño real; descarga como respaldo.
+- **Lector USB**: el cursor queda listo en el buscador de Vender (se puede
+  escanear sin tocar el mouse); la búsqueda entiende el código interno de
+  la etiqueta y el guion que el teclado latino convierte en apóstrofo.
+- Guía para el día de instalación: `docs/IMPRESORAS.md`.
+
 ## Base de datos en la nube funcionando + pulido profesional (2026-11-13)
 
 - **CRÍTICO — la base de datos ya no se pierde al reiniciar el servidor.**

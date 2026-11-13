@@ -1,4 +1,7 @@
-"""Etiquetas con código de barras en PDF (§6: "etiquetas con código de
+"""LEGADO: reemplazado por `core/etiquetas.py` (tamaño físico del rollo,
+varias por fila, barras nítidas). Se conserva por compatibilidad.
+
+Etiquetas con código de barras en PDF (§6: "etiquetas con código de
 barras en PDF").
 
 Propiedad exclusiva de A1 (INVENTARIO). No es un contrato congelado — ver

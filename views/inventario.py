@@ -14,11 +14,19 @@ import secrets
 import pandas as pd
 import streamlit as st
 
-from core import costing, importer, inventory, labels_ot
+from core import costing, etiquetas, importer, inventory
 from core.money import DineroInvalidoError, format_cop
 from core.permissions import PermisoDenegadoError, requerir, tiene_capacidad
 from core.schema import SEDE_PRINCIPAL
-from core.ui import card, chip_estado, encabezado_pagina, estado_vacio, tabla_amigable, titulo_seccion
+from core.ui import (
+    boton_imprimir_pdf,
+    card,
+    chip_estado,
+    encabezado_pagina,
+    estado_vacio,
+    tabla_amigable,
+    titulo_seccion,
+)
 from views import ViewContext
 
 logger = logging.getLogger(__name__)
@@ -492,8 +500,17 @@ def _tab_importar(ctx: ViewContext, rol: str) -> None:
 
 
 # ------------------------------------------------------------- Etiquetas
+_PERSONALIZADO = "Personalizado…"
+
+
 def _tab_etiquetas(ctx: ViewContext, rol: str) -> None:
-    titulo_seccion("Etiquetas con código de barras")
+    """Etiquetas de precio para la impresora DigitalPOS de etiquetas.
+
+    Prioridad del diseño: artículo, código de barras y precio (ver
+    `core/etiquetas.py`). El PDF sale al tamaño FÍSICO del rollo; el
+    perfil (medidas, etiquetas por fila) se guarda en CONFIG para que el
+    día de la instalación se ajuste sin tocar código."""
+    titulo_seccion("Etiquetas de precio")
 
     try:
         requerir(rol, "etiquetas")
@@ -506,40 +523,179 @@ def _tab_etiquetas(ctx: ViewContext, rol: str) -> None:
     except Exception as exc:  # pragma: no cover - defensivo
         st.error(_mensaje_amigable(exc, "listar productos para etiquetas"))
         return
-
-    con_codigo = productos[productos["codigo_barras"].astype(str).str.strip() != ""]
-    if con_codigo.empty:
-        estado_vacio("Ningún producto activo tiene código de barras asignado todavía.", icono="qr_code")
+    if productos.empty:
+        estado_vacio("Todavía no hay productos activos.", "Crea productos en la pestaña Productos.", icono="sell")
         return
 
-    opciones = {f"{fila['id']} · {fila['nombre']}": fila["id"] for _, fila in con_codigo.iterrows()}
-    seleccionados = st.multiselect("Productos a imprimir", options=list(opciones.keys()))
-    incluir_precio = st.checkbox("Incluir precio en la etiqueta", value=True)
+    perfil = _seccion_perfil_etiquetas(ctx, rol)
+    if perfil is None:
+        return
 
-    if st.button("Generar PDF de etiquetas", type="primary", disabled=not seleccionados, icon=":material/qr_code_2:"):
-        filas = con_codigo[con_codigo["id"].isin([opciones[s] for s in seleccionados])]
-        datos = [
+    with card(acento="superior"):
+        titulo_seccion("¿Qué etiquetas imprimir?", centrado=False)
+        busqueda = st.text_input("Filtrar productos", key="etq_filtro", icon=":material/search:")
+        tabla = productos.copy()
+        if busqueda.strip():
+            patron = busqueda.strip().lower()
+            tabla = tabla[
+                tabla["nombre"].astype(str).str.lower().str.contains(patron, regex=False)
+                | tabla["id"].astype(str).str.lower().str.contains(patron, regex=False)
+            ]
+        editor = pd.DataFrame(
             {
-                "nombre": fila["nombre"],
-                "codigo_barras": fila["codigo_barras"],
-                "precio": int(fila["precio"]) if incluir_precio and pd.notna(fila["precio"]) else None,
+                "imprimir": False,
+                "id": tabla["id"].astype(str),
+                "producto": tabla["nombre"].astype(str),
+                "precio": tabla["precio"].apply(lambda v: format_cop(int(v)) if pd.notna(v) else "—"),
+                "stock": tabla["stock_actual"].astype(int),
+                "cantidad": tabla["stock_actual"].astype(int).clip(lower=1),
             }
-            for _, fila in filas.iterrows()
-        ]
+        )
+        editado = st.data_editor(
+            editor,
+            hide_index=True,
+            use_container_width=True,
+            key=f"etq_editor_{busqueda.strip().lower()}",
+            disabled=["id", "producto", "precio", "stock"],
+            column_config={
+                "imprimir": st.column_config.CheckboxColumn("Imprimir"),
+                "id": st.column_config.TextColumn("Código"),
+                "producto": st.column_config.TextColumn("Producto"),
+                "precio": st.column_config.TextColumn("Precio"),
+                "stock": st.column_config.NumberColumn("Stock"),
+                "cantidad": st.column_config.NumberColumn("Cantidad de etiquetas", min_value=1, max_value=500, step=1),
+            },
+        )
+        incluir_precio = st.checkbox("Incluir precio en la etiqueta", value=True, key="etq_precio")
+
+    elegidos = editado[editado["imprimir"]]
+    if elegidos.empty:
+        st.caption("Marca la casilla **Imprimir** de cada producto (por defecto, una etiqueta por unidad en stock).")
+        return
+
+    por_id = productos.set_index(productos["id"].astype(str))
+    items: list[etiquetas.ItemEtiqueta] = []
+    codigos_largos: list[str] = []
+    for _, fila in elegidos.iterrows():
+        prod = por_id.loc[fila["id"]]
+        codigo = etiquetas.codigo_para_producto(fila["id"], prod.get("codigo_barras"))
+        if etiquetas.modulo_barras_px(codigo, perfil.mm_a_px(perfil.ancho_mm - 2.4)) < 2:
+            codigos_largos.append(f"{prod['nombre']} ({codigo})")
+        precio = int(prod["precio"]) if incluir_precio and pd.notna(prod["precio"]) else None
+        items += [etiquetas.ItemEtiqueta(str(prod["nombre"]), codigo, precio)] * int(fila["cantidad"] or 1)
+
+    filas = (len(items) + perfil.columnas - 1) // perfil.columnas
+    st.markdown(
+        chip_estado(f"{len(items)} etiqueta(s) · {filas} fila(s) del rollo", "info", icono="sell"),
+        unsafe_allow_html=True,
+    )
+    if codigos_largos:
+        st.warning(
+            "Estos códigos de barras son largos para el ancho de la etiqueta y las barras salen muy finas "
+            "(el lector podría fallar). Prueba a escanear una antes de imprimir todas: "
+            + ", ".join(codigos_largos)
+        )
+
+    try:
+        vista = etiquetas.componer_filas(items[: perfil.columnas], perfil)[0]
+        pdf_bytes = etiquetas.generar_pdf(items, perfil)
+    except ValueError as exc:
+        st.error(str(exc))
+        return
+    except Exception as exc:  # pragma: no cover - defensivo
+        st.error(_mensaje_amigable(exc, "generar etiquetas"))
+        return
+
+    with card(acento="izquierdo"):
+        titulo_seccion("Vista previa (primera fila)", centrado=False)
+        st.image(vista.convert("L"), use_container_width=True)
+        st.caption(
+            f"En el diálogo de impresión: impresora de **etiquetas**, papel **{perfil.descripcion_papel}**, "
+            "escala **100 % / tamaño real**, sin márgenes."
+        )
+        etiquetas_pdf_boton(pdf_bytes)
+        with st.expander("Avanzado: enviar directo a la impresora (TSPL)", icon=":material/terminal:"):
+            st.caption(
+                "Si el driver de Windows recorta o escala las etiquetas, este archivo va directo a la "
+                "impresora sin driver (ver docs/IMPRESORAS.md). Es la misma imagen del PDF."
+            )
+            invertir = st.checkbox("Invertir blanco/negro (solo si sale en negativo)", key="etq_tspl_inv")
+            st.download_button(
+                "Descargar archivo TSPL (.prn)",
+                data=etiquetas.generar_tspl(items, perfil, invertir=invertir),
+                file_name="etiquetas_ola_tata.prn",
+                mime="application/octet-stream",
+                icon=":material/download:",
+            )
+
+
+def etiquetas_pdf_boton(pdf_bytes: bytes) -> None:
+    boton_imprimir_pdf(pdf_bytes, "Imprimir etiquetas", nombre_archivo="etiquetas_ola_tata.pdf", key="etq_pdf")
+
+
+def _seccion_perfil_etiquetas(ctx: ViewContext, rol: str):
+    """Elige/ajusta el rollo. Devuelve el `PerfilEtiqueta` en uso."""
+    guardado = etiquetas.cargar_perfil(ctx.storage)
+    with card(acento="superior"):
+        titulo_seccion("Impresora y rollo de etiquetas", centrado=False)
+        nombres = list(etiquetas.PERFILES_PREDEFINIDOS) + [_PERSONALIZADO]
+        indice = nombres.index(guardado.nombre) if guardado.nombre in nombres else len(nombres) - 1
+        eleccion = st.selectbox("Tamaño del rollo", nombres, index=indice, key="etq_perfil_sel")
+        base = etiquetas.PERFILES_PREDEFINIDOS.get(eleccion, guardado)
+
+        with st.expander("Ajustar medidas (mídelas con una regla)", icon=":material/straighten:",
+                         expanded=eleccion == _PERSONALIZADO):
+            c1, c2, c3 = st.columns(3)
+            ancho = c1.number_input("Ancho etiqueta (mm)", 10.0, 120.0, float(base.ancho_mm), 0.5, key=f"etq_w_{eleccion}")
+            alto = c2.number_input("Alto etiqueta (mm)", 10.0, 120.0, float(base.alto_mm), 0.5, key=f"etq_h_{eleccion}")
+            columnas = c3.number_input("Etiquetas por fila", 1, 4, int(base.columnas), 1, key=f"etq_c_{eleccion}")
+            c4, c5, c6 = st.columns(3)
+            separacion = c4.number_input("Separación entre etiquetas (mm)", 0.0, 20.0, float(base.separacion_mm), 0.5,
+                                         key=f"etq_s_{eleccion}")
+            margen = c5.number_input("Margen izquierdo (mm)", 0.0, 20.0, float(base.margen_izq_mm), 0.5,
+                                     key=f"etq_m_{eleccion}")
+            gap = c6.number_input("Espacio entre filas (mm)", 0.0, 10.0, float(base.gap_vertical_mm), 0.5,
+                                  key=f"etq_g_{eleccion}")
+            dpi = st.radio("Resolución de la impresora", [203, 300], index=0 if base.dpi == 203 else 1,
+                           horizontal=True, key=f"etq_dpi_{eleccion}",
+                           format_func=lambda d: f"{d} dpi" + (" (la más común)" if d == 203 else ""))
         try:
-            pdf_bytes = labels_ot.generar_pdf_etiquetas(datos)
+            perfil = etiquetas.PerfilEtiqueta(
+                nombre=eleccion if eleccion != _PERSONALIZADO else _PERSONALIZADO,
+                ancho_mm=ancho, alto_mm=alto, columnas=int(columnas), separacion_mm=separacion,
+                margen_izq_mm=margen, gap_vertical_mm=gap, dpi=int(dpi),
+            )
         except ValueError as exc:
             st.error(str(exc))
-            return
-        except Exception as exc:  # pragma: no cover - defensivo
-            st.error(_mensaje_amigable(exc, "generar etiquetas"))
-            return
-        st.download_button(
-            "Descargar PDF de etiquetas",
-            data=pdf_bytes,
-            file_name="etiquetas_ola_tata.pdf",
-            mime="application/pdf",
+            return None
+        if perfil != base and eleccion != _PERSONALIZADO:
+            perfil = etiquetas.con_perfil(perfil, nombre=_PERSONALIZADO)
+
+        st.markdown(
+            chip_estado(f"Papel en el driver: {perfil.descripcion_papel}", "info", icono="print"),
+            unsafe_allow_html=True,
         )
+        col_a, col_b = st.columns(2)
+        if col_a.button("Guardar como predeterminado", icon=":material/save:", use_container_width=True,
+                        disabled=perfil == guardado):
+            try:
+                with ctx.storage.transaction() as tx:
+                    etiquetas.guardar_perfil(tx, rol, perfil)
+            except PermisoDenegadoError:
+                st.error("No tienes permiso para cambiar el perfil de etiquetas.")
+            except Exception as exc:  # pragma: no cover - defensivo
+                st.error(_mensaje_amigable(exc, "guardar perfil de etiquetas"))
+            else:
+                st.success("Perfil guardado.")
+        with col_b:
+            with st.popover("Hoja de prueba", icon=":material/grid_on:", use_container_width=True):
+                st.caption(
+                    "Imprime UNA fila con el borde de cada etiqueta. Si los recuadros caen dentro de las "
+                    "etiquetas del rollo, las medidas están bien."
+                )
+                boton_imprimir_pdf(etiquetas.generar_pdf_calibracion(perfil), "Imprimir hoja de prueba",
+                                   nombre_archivo="prueba_etiquetas.pdf", key="etq_calibracion")
+    return perfil
 
 
 # ----------------------------------------------------------- Integridad

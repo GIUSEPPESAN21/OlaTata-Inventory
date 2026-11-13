@@ -71,6 +71,8 @@ __all__ = [
     "registrar_tema_plotly",
     "ETIQUETAS_COLUMNAS",
     "tabla_amigable",
+    "boton_imprimir_pdf",
+    "enfocar_campo",
 ]
 
 # Iconos Material Symbols (§9: sin emojis en la UI) para cada vista del
@@ -809,3 +811,95 @@ def tabla_amigable(df: Any) -> Any:
         ETIQUETAS_COLUMNAS.get(col, str(col).replace("_", " ").strip().capitalize()) for col in tabla.columns
     ]
     return tabla
+
+
+# ----------------------------------------------------------- impresión
+def _html_boton_imprimir(pdf_b64: str, texto: str, nonce: str) -> str:
+    """HTML/JS del botón. Abre el PDF (Blob, mismo origen) en un iframe
+    oculto y llama a `print()`: sale el diálogo de impresión del sistema
+    con el PDF a tamaño real, sin pasar por "Descargas". Si el navegador
+    no deja imprimir el iframe, abre el PDF en una pestaña nueva (desde
+    ahí: Ctrl+P). Los colores son los del tema (CLAUDE.md §8)."""
+    c = TOKENS["color"]
+    return f"""
+<div style="font-family:Inter,system-ui,sans-serif">
+  <button id="b{nonce}" style="width:100%;min-height:46px;border:none;border-radius:16px;
+    background:{c['primario']};color:#fff;font-size:16px;font-weight:600;cursor:pointer">
+    &#128424;&nbsp; {texto}</button>
+  <div id="m{nonce}" style="font-size:13px;color:{c['texto_secundario']};margin-top:4px"></div>
+</div>
+<script>
+(function() {{
+  const b64 = "{pdf_b64}";
+  const bytes = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], {{type: "application/pdf"}}));
+  const msg = document.getElementById("m{nonce}");
+  document.getElementById("b{nonce}").addEventListener("click", function() {{
+    let marco = document.getElementById("f{nonce}");
+    if (marco) marco.remove();
+    marco = document.createElement("iframe");
+    marco.id = "f{nonce}";
+    marco.style.cssText = "position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0";
+    marco.src = url;
+    marco.onload = function() {{
+      try {{ marco.contentWindow.focus(); marco.contentWindow.print(); msg.textContent = ""; }}
+      catch (e) {{ window.open(url, "_blank"); msg.textContent = "Se abrió el PDF en otra pestaña: imprímelo con Ctrl+P."; }}
+    }};
+    document.body.appendChild(marco);
+  }});
+}})();
+</script>"""
+
+
+def boton_imprimir_pdf(pdf_bytes: bytes, texto: str, *, nombre_archivo: str, key: str) -> None:
+    """Botón "Imprimir" (diálogo del sistema) + descarga del mismo PDF como
+    respaldo. El PDF ya viene al tamaño físico del papel (etiquetas o
+    tirilla); en el diálogo hay que elegir la impresora correcta y escala
+    "Tamaño real"/100 % (ver docs/IMPRESORAS.md)."""
+    import base64
+
+    import streamlit as st
+    import streamlit.components.v1 as components
+
+    b64 = base64.b64encode(pdf_bytes).decode("ascii")
+    nonce = uuid.uuid4().hex[:8]
+    components.html(_html_boton_imprimir(b64, texto, nonce), height=78)
+    st.download_button(
+        "Descargar PDF",
+        data=pdf_bytes,
+        file_name=nombre_archivo,
+        mime="application/pdf",
+        key=key,
+        icon=":material/download:",
+        use_container_width=True,
+    )
+
+
+def enfocar_campo(etiqueta_aria: str) -> None:
+    """Deja el cursor en el campo cuyo `aria-label` coincide, para que el
+    lector de códigos USB (que "teclea" el código + Enter) escriba ahí sin
+    tener que hacer clic. No roba el foco si el usuario está escribiendo
+    en otro campo. El componente vive en un iframe del MISMO origen, por
+    eso puede alcanzar `window.parent.document`."""
+    import json
+
+    import streamlit.components.v1 as components
+
+    etiqueta = json.dumps(etiqueta_aria)
+    components.html(
+        f"""<script>
+(function() {{
+  let intentos = 0;
+  function enfocar() {{
+    const doc = window.parent.document;
+    const campo = doc.querySelector('input[aria-label=' + JSON.stringify({etiqueta}) + ']');
+    const activo = doc.activeElement;
+    const ocupado = activo && activo !== campo && ["INPUT", "TEXTAREA", "SELECT"].includes(activo.tagName);
+    if (campo && !ocupado) {{ campo.focus(); return; }}
+    if (!campo && intentos++ < 20) setTimeout(enfocar, 150);
+  }}
+  setTimeout(enfocar, 120);
+}})();
+</script><!-- {uuid.uuid4().hex} -->""",
+        height=0,
+    )

@@ -143,6 +143,8 @@ nunca comparte repositorio con los datos reales del negocio.
   del token de GitHub.
 - `MANUAL_USUARIO.md` — guía corta por rol (Dueño/a, Vendedor/a), con
   capturas de pantalla reales.
+- `docs/IMPRESORAS.md` — impresora de etiquetas, tirilla de 80 mm y lector
+  de códigos: cómo imprime la app y lista de chequeo para instalarlas.
 - `docs/ARQUITECTURA.md` — esquema de datos, sincronización con GitHub,
   permisos, sistema de diseño y flujo del cierre mensual.
 - `docs/CONTRATOS.md` — API congelada de los módulos base de `core/`.

@@ -81,3 +81,15 @@ def test_venta_completa_por_la_vista_descuenta_stock(tmp_path):
 
     stock = storage.read_sheet(schema.STOCK)
     assert int(stock.iloc[0]["cantidad"]) == 9
+
+
+def test_lector_usb_codigo_interno_de_etiqueta_y_teclado_latino(tmp_path):
+    """El lector "teclea": el código interno de la etiqueta (20000001) y el
+    id con el guion convertido en apóstrofo por el teclado latinoamericano
+    (OT'000001) deben encontrar el mismo producto."""
+    at = _app(tmp_path)
+    _agregar(at, "20000001")
+    _agregar(at, "ot'000001")
+    assert at.session_state["vender_carrito"][0]["cantidad"] == 2
+    _agregar(at, "99999999")
+    assert any("No se encontró" in e.value for e in at.error)
