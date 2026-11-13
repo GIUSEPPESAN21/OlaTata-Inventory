@@ -35,3 +35,14 @@ Nunca estirar ni deformar: conservar proporción 1:1 siempre. A menos de
 56 px, usar solo el círculo (avatar) sin intentar que el texto interior
 sea legible — a esa escala el texto del logo deja de leerse y confunde
 en vez de aportar identidad.
+
+
+## Logo de SAVA (desarrollador)
+
+- `sava-logo.png` (128 × 128, PNG con transparencia): el que usa el pie de
+  página (`core.ui.pie_pagina`), mostrado a 20 px.
+- `sava-logo-512.png` (512 × 512): versión grande de referencia.
+
+Ambos se generaron a partir de la imagen entregada por SAVA (colibrí blanco
+sobre fondo gris oscuro), recortando el borde blanco exterior y aplicando
+esquinas redondeadas. Para cambiarlo basta con reemplazar `sava-logo.png`.

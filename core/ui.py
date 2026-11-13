@@ -275,9 +275,10 @@ empty_state = estado_vacio
 DESARROLLADOR = {"marca": "SAVA", "nombre": "Joseph Sánchez", "telefono": "3222074527"}
 
 
-def _logo_sava_html(tamano_px: int = 18) -> str:
+def _logo_sava_html(tamano_px: int = 20) -> str:
     """Logo de SAVA en miniatura. Si existe `assets/brand/sava-logo.png`
-    se usa ese archivo; si no, un monograma "S" dorado provisional."""
+    se usa ese archivo (el colibrí de SAVA, 128 px, esquinas redondeadas);
+    si faltara, un monograma "S" dorado de respaldo."""
     ruta = logo_path("sava-logo.png")
     if ruta:
         import base64

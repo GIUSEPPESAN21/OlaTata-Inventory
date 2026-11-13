@@ -128,3 +128,11 @@ def test_inyectar_identidad_visual_no_truena():
 
 def test_encabezado_marca_no_truena():
     ui.encabezado_marca("Ola Tata")
+
+
+def test_pie_de_pagina_usa_el_logo_real_de_sava():
+    assert ui.logo_path("sava-logo.png") is not None
+    html = ui._logo_sava_html()
+    assert html.startswith('<img class="ot-pie-pagina__logo" src="data:image/png;base64,')
+    assert 'width="20"' in html and 'alt="SAVA"' in html
+    assert ui.DESARROLLADOR == {"marca": "SAVA", "nombre": "Joseph Sánchez", "telefono": "3222074527"}
